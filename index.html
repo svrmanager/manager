@@ -42,8 +42,22 @@
             <h3 id="logoutTitle" class="font-bold text-lg text-gray-800 mb-4 transition-all">Informasi Akun</h3>
             
             <div class="bg-gray-50 p-4 rounded-xl text-left mb-4 text-sm border shadow-inner">
+                <p class="text-gray-500 mb-1 text-xs uppercase font-bold tracking-wider">Username:</p>
+                <div class="flex gap-2 mb-3">
+                    <input type="text" id="logoutUsernameDisplay" class="font-bold text-gray-800 bg-transparent border-b border-transparent focus:border-indigo-500 outline-none w-full" readonly>
+                    <button id="btnEditUsername" class="text-indigo-500 hover:text-indigo-700 transition" title="Edit Username"><i class="fas fa-edit"></i></button>
+                    <button id="btnSaveUsername" class="text-green-500 hover:text-green-700 transition hidden" title="Simpan"><i class="fas fa-check"></i></button>
+                </div>
+
+                <p class="text-gray-500 mb-1 text-xs uppercase font-bold tracking-wider">User ID:</p>
+                <div class="flex gap-2 mb-3">
+                    <input type="text" id="logoutUserIdDisplay" class="font-bold text-gray-800 tracking-widest bg-gray-200/60 px-2 py-1 rounded w-full outline-none text-center" readonly>
+                    <button id="btnCopyUserId" class="text-gray-500 hover:text-indigo-600 transition" title="Salin User ID"><i class="fas fa-copy"></i></button>
+                </div>
+
                 <p class="text-gray-500 mb-1 text-xs uppercase font-bold tracking-wider">Email:</p>
                 <p id="logoutEmailDisplay" class="font-bold text-gray-800 mb-3 truncate">user@email.com</p>
+                
                 <p class="text-gray-500 mb-1 text-xs uppercase font-bold tracking-wider">Password:</p>
                 <p id="logoutPasswordDisplay" class="font-bold text-gray-800 tracking-widest bg-gray-200 px-2 py-1 rounded inline-block">********</p>
             </div>
@@ -51,8 +65,8 @@
             <button id="btnTogglePassword" class="text-sm text-indigo-600 font-bold hover:bg-indigo-50 px-4 py-2 rounded-lg transition w-full mb-2">Lihat Password</button>
 
             <div id="logoutActionButtons" class="hidden gap-3 mt-4">
-                <button id="btnCancelLogout" class="flex-1 py-3 text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-xl font-bold text-sm transition">Tidak</button>
-                <button id="btnConfirmLogout" class="flex-1 py-3 text-white bg-red-600 hover:bg-red-700 rounded-xl font-bold text-sm shadow transition">Ya, Keluar</button>
+                <button id="btnCancelLogout" class="flex-1 py-3 text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-xl font-bold text-sm transition">Tutup</button>
+                <button id="btnConfirmLogout" class="flex-1 py-3 text-white bg-red-600 hover:bg-red-700 rounded-xl font-bold text-sm shadow transition">Keluar Akun</button>
             </div>
         </div>
     </div>
@@ -85,7 +99,7 @@
     <div id="authOverlay" class="fixed inset-0 z-[100] bg-white flex items-center justify-center p-4">
         <div class="w-full max-w-md p-8 text-center animate-fade-in shadow-2xl rounded-2xl border border-gray-100">
             <h2 class="text-4xl font-extrabold text-gray-800 tracking-tight">SERVER MANAGER<span class="text-indigo-600">.</span></h2>
-            <div class="-mt-4 mb-6">
+            <div class="mt-1 mb-6">
                 <p class="text-sm text-gray-400 font-light tracking-widest">Source: 2025</p>
                 <p class="text-[10px] text-gray-300 tracking-widest font-mono">V 01.0001.01</p>
             </div>
@@ -109,9 +123,7 @@
             <div id="forgotBox" class="hidden space-y-4 animate-fade-in pb-2">
                 <p class="text-gray-800 font-bold text-lg">Reset Password</p>
                 <p class="text-xs text-gray-500 mb-2 px-2">Masukkan email Anda. Kami akan mengirimkan tautan untuk mengatur ulang password.</p>
-                
                 <input type="email" id="forgotEmailInput" class="w-full px-5 py-3 border rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none" placeholder="Masukkan Email Address">
-                
                 <button id="sendResetBtn" class="w-full bg-orange-500 text-white font-bold py-3.5 rounded-xl shadow-lg hover:bg-orange-600 transition mt-4">Kirim Link Reset</button>
                 <button id="backToLoginBtn" class="w-full bg-gray-50 text-gray-600 font-bold py-3 rounded-xl hover:bg-gray-100 border transition mt-2 text-sm">Kembali ke Login</button>
             </div>
@@ -120,8 +132,27 @@
 
     <div id="appContainer" class="hidden w-[98%] h-[98%] bg-white shadow-2xl rounded-2xl overflow-hidden flex border border-gray-200 relative">
         <aside id="roomListPanel" class="w-full md:w-1/4 bg-white border-r border-gray-200 flex flex-col h-full absolute md:relative z-20 transition-transform duration-300">
-            <div class="p-5 border-b flex justify-between items-center bg-gray-50"><div class="overflow-hidden"><h2 id="sidebarTitle" class="font-bold text-lg text-gray-800 truncate">Guest</h2><p id="sidebarEmail" class="text-xs text-gray-500 truncate w-40">user@email.com</p></div><button id="logoutBtn" class="text-gray-400 hover:text-red-500 p-2 transition"><i class="fas fa-power-off"></i></button></div>
-            <div class="p-3 grid grid-cols-2 gap-2 bg-white border-b"><button id="btnOpenCreate" class="py-2 bg-indigo-600 text-white rounded-lg text-xs font-bold hover:bg-indigo-700 shadow transition"><i class="fas fa-plus mr-1"></i> Buat</button><button id="btnOpenJoin" class="py-2 bg-white border border-indigo-600 text-indigo-600 rounded-lg text-xs font-bold hover:bg-indigo-50 transition"><i class="fas fa-sign-in-alt mr-1"></i> Gabung</button></div>
+            <div class="p-4 border-b flex justify-between items-center bg-gray-50 gap-2">
+                <div class="flex items-center gap-3 overflow-hidden">
+                    <div class="relative group cursor-pointer flex-shrink-0" id="userProfileBtn" title="Ubah Foto Profil">
+                        <img id="sidebarUserAvatar" src="" class="w-10 h-10 rounded-full object-cover shadow-sm hidden">
+                        <div id="sidebarUserInitial" class="w-10 h-10 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 text-white flex items-center justify-center font-bold text-lg shadow-sm"></div>
+                        <div class="absolute inset-0 bg-black/50 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition"><i class="fas fa-camera text-white text-xs"></i></div>
+                    </div>
+                    <div class="overflow-hidden flex-1">
+                        <h2 id="sidebarTitle" class="font-bold text-lg text-gray-800 leading-tight truncate">Guest</h2>
+                        <p id="sidebarEmail" class="text-[10px] text-gray-500 truncate w-32">user@email.com</p>
+                    </div>
+                </div>
+                <input type="file" id="userAvatarInput" class="hidden" accept="image/*">
+                
+                <button id="logoutBtn" class="text-gray-400 hover:text-red-500 p-2 transition flex-shrink-0" title="Informasi Akun"><i class="fas fa-cog"></i></button>
+            </div>
+            
+            <div class="p-3 grid grid-cols-2 gap-2 bg-white border-b">
+                <button id="btnOpenCreate" class="py-2 bg-indigo-600 text-white rounded-lg text-xs font-bold hover:bg-indigo-700 shadow transition"><i class="fas fa-plus mr-1"></i> Buat</button>
+                <button id="btnOpenJoin" class="py-2 bg-white border border-indigo-600 text-indigo-600 rounded-lg text-xs font-bold hover:bg-indigo-50 transition"><i class="fas fa-sign-in-alt mr-1"></i> Gabung</button>
+            </div>
             
             <div id="roomsContainer" class="flex-1 overflow-y-auto p-2 space-y-1 bg-gray-50"></div>
             
@@ -140,10 +171,17 @@
             <header id="chatHeader" class="bg-white p-3 px-4 border-b flex items-center justify-between shadow-sm z-40 hidden relative">
                 <div class="flex items-center gap-3 overflow-hidden">
                     <button id="backToDashboard" class="md:hidden text-indigo-600 p-2 -ml-2"><i class="fas fa-arrow-left"></i></button>
+                    
+                    <div class="relative group cursor-pointer flex-shrink-0" id="roomProfileBtn" title="Foto Grup">
+                        <img id="headerRoomAvatar" src="" class="w-10 h-10 rounded-full object-cover shadow-sm hidden">
+                        <div id="headerRoomInitial" class="w-10 h-10 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 text-white flex items-center justify-center font-bold text-lg shadow-sm"></div>
+                        <div id="roomProfileOverlay" class="absolute inset-0 bg-black/50 rounded-full flex items-center justify-center opacity-0 transition hidden group-hover:opacity-100"><i class="fas fa-camera text-white text-xs"></i></div>
+                    </div>
+                    <input type="file" id="roomAvatarInput" class="hidden" accept="image/*">
+
                     <div class="overflow-hidden">
                         <h2 id="activeRoomName" class="font-bold text-gray-800 text-lg leading-tight truncate">Nama Ruang</h2>
-                        <span id="activeRoomCode" class="text-[10px] bg-gray-100 text-gray-500 px-2 py-0.5 rounded font-mono border">CODE</span>
-                    </div>
+                        </div>
                 </div>
                 
                 <div class="flex items-center gap-1 flex-shrink-0">
@@ -152,9 +190,13 @@
                     <div class="relative">
                         <button id="groupMenuBtn" class="text-gray-500 hover:bg-gray-100 w-10 h-10 rounded-full transition"><i class="fas fa-ellipsis-v"></i></button>
                         <div id="groupMenuDropdown" class="hidden absolute right-0 top-12 bg-white shadow-xl rounded-xl border w-48 py-2 z-50 animate-fade-in">
-                            <button id="viewMembersBtn" class="w-full text-left px-4 py-3 hover:bg-gray-50 text-sm text-gray-700"><i class="fas fa-users mr-2 text-indigo-500"></i> Anggota Grup</button>
                             
-                            <button id="toggleNotifBtn" class="w-full text-left px-4 py-3 hover:bg-gray-50 text-sm text-gray-700"><i class="fas fa-bell mr-2 text-yellow-500"></i> Aktifkan Notifikasi</button>
+                            <button id="viewMembersBtn" class="w-full text-left px-4 py-3 hover:bg-gray-50 text-sm text-gray-700"><i class="fas fa-users mr-2 text-indigo-500"></i> Anggota Grup</button>
+                            <button id="renameRoomBtn" class="w-full text-left px-4 py-3 hover:bg-gray-50 text-sm text-gray-700 hidden"><i class="fas fa-edit mr-2 text-blue-500"></i> Ubah Nama Grup</button>
+                            
+                            <button id="accessSettingsBtn" class="w-full text-left px-4 py-3 hover:bg-gray-50 text-sm text-gray-700 hidden"><i class="fas fa-shield-alt mr-2 text-green-500"></i> Akses & Kode Grup</button>
+
+                            <button id="toggleNotifBtn" class="w-full text-left px-4 py-3 hover:bg-gray-50 text-sm text-gray-700 border-t"><i class="fas fa-bell mr-2 text-yellow-500"></i> Aktifkan Notifikasi</button>
                             <button id="archiveRoomBtn" class="w-full text-left px-4 py-3 hover:bg-gray-50 text-sm text-gray-700"><i class="fas fa-archive mr-2 text-gray-500"></i> Arsipkan Chat</button>
                             
                             <div class="border-t my-1"></div>
@@ -170,43 +212,28 @@
                 <button id="closeSearchBtn" class="text-gray-400 hover:text-red-500 p-1 transition"><i class="fas fa-times"></i></button>
             </div>
             
-            <div id="chatBox" class="flex-1 overflow-y-auto p-4 space-y-4 hidden bg-white pb-20 md:pb-4"></div>
+            <div id="chatBox" class="flex-1 overflow-y-auto p-4 space-y-4 hidden bg-white pb-20 md:pb-4 relative"></div>
             
             <footer id="chatInputArea" class="bg-[#f0f2f5] p-2 md:p-3 hidden border-t absolute bottom-0 w-full md:relative">
                 
                 <div id="multiPreviewContainer" class="hidden mb-2 p-3 bg-white rounded-xl border mx-2 shadow-sm max-h-40 overflow-y-auto">
                     <div id="multiPreviewList" class="flex flex-wrap gap-2 mb-2"></div>
-                    <button id="addMoreFilesInsideBtn" class="text-xs text-indigo-600 font-bold hover:bg-indigo-50 px-3 py-2 rounded-lg transition border border-dashed border-indigo-300 w-full text-center">
-                        <i class="fas fa-plus mr-1"></i> Tambah Gambar / File Lainnya
-                    </button>
                 </div>
 
                 <div class="flex items-end gap-2 max-w-5xl mx-auto">
-                    
                     <div class="relative flex-shrink-0">
-                        <button id="multiAttachBtn" class="p-2 text-indigo-600 hover:text-white hover:bg-indigo-500 transition bg-indigo-50 rounded-full shadow-sm h-10 w-10 md:h-12 md:w-12 flex items-center justify-center" title="Kirim Banyak File">
-                            <i class="fas fa-layer-group text-lg"></i>
+                        <button id="multiAttachBtn" class="p-2 text-indigo-600 hover:text-white hover:bg-indigo-500 transition bg-indigo-50 rounded-full shadow-sm h-10 w-10 flex items-center justify-center mb-1" title="Lampirkan File">
+                            <i class="fas fa-paperclip text-lg"></i>
                         </button>
-                        
-                        <div id="attachMenu" class="hidden absolute bottom-14 left-0 bg-white shadow-xl rounded-xl border w-40 py-2 z-50 animate-fade-in">
-                            <button id="menuAttachImgBtn" class="w-full text-left px-4 py-3 hover:bg-gray-50 text-sm text-gray-700 transition">
-                                <i class="fas fa-image mr-3 text-indigo-500 text-lg"></i> Gambar
-                            </button>
-                            <div class="border-t border-gray-100 my-0"></div>
-                            <button id="menuAttachFileBtn" class="w-full text-left px-4 py-3 hover:bg-gray-50 text-sm text-gray-700 transition">
-                                <i class="fas fa-file-alt mr-3 text-orange-500 text-lg"></i> File / Dokumen
-                            </button>
-                        </div>
                     </div>
 
-                    <input type="file" id="multiImageInput" class="hidden" accept="image/*,video/*" multiple>
                     <input type="file" id="multiFileInput" class="hidden" multiple>
 
-                    <div class="flex-1 bg-white rounded-2xl flex items-center border border-gray-300 focus-within:ring-2 focus-within:ring-indigo-500 transition px-2">
-                        <textarea id="msgInput" rows="1" class="w-full bg-transparent border-none focus:ring-0 outline-none resize-none px-2 py-3 max-h-24 text-sm" placeholder="Ketik pesan..."></textarea>
+                    <div class="flex-1 bg-white rounded-2xl border border-gray-300 focus-within:ring-2 focus-within:ring-indigo-500 transition px-1 py-1">
+                        <textarea id="msgInput" rows="1" class="w-full bg-transparent border-none focus:ring-0 outline-none resize-none px-3 py-2 text-sm leading-relaxed" style="max-height: 160px; overflow-y: auto;" placeholder="Tulis Pesan"></textarea>
                     </div>
 
-                    <button id="sendBtn" class="bg-indigo-600 text-white w-10 h-10 md:h-12 md:w-12 rounded-full hover:bg-indigo-700 shadow-md flex items-center justify-center transition transform active:scale-95 flex-shrink-0">
+                    <button id="sendBtn" class="bg-indigo-600 text-white w-10 h-10 rounded-full hover:bg-indigo-700 shadow-md flex items-center justify-center transition transform active:scale-95 flex-shrink-0 mb-1">
                         <i class="fas fa-paper-plane"></i>
                     </button>
                 </div>
@@ -214,10 +241,67 @@
         </main>
     </div>
 
-    <div id="modalMembers" class="fixed inset-0 z-[80] bg-black/50 backdrop-blur-sm hidden flex items-center justify-center p-4"><div class="bg-white rounded-2xl w-full max-w-sm shadow-2xl overflow-hidden animate-fade-in"><div class="bg-indigo-600 p-4 text-white flex justify-between items-center"><h3 class="font-bold text-lg">Anggota Grup</h3><button onclick="document.getElementById('modalMembers').classList.add('hidden')" class="hover:text-gray-200"><i class="fas fa-times"></i></button></div><div class="p-4 max-h-[300px] overflow-y-auto" id="membersListContainer"></div><div class="p-4 bg-gray-50 text-center border-t text-xs text-gray-500">Total: <span id="memberCount">0</span></div></div></div>
-    <div id="modalCreate" class="fixed inset-0 z-[70] bg-black/50 hidden flex items-center justify-center p-4"><div class="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl"><h3 class="font-bold text-lg mb-4">Buat Grup Baru</h3><input id="newRoomName" class="w-full border p-3 rounded-lg mb-4" placeholder="Nama Grup"><div class="flex justify-end gap-2"><button id="btnCloseCreate" class="px-4 py-2 text-gray-500 text-sm">Batal</button><button id="confirmCreateRoom" class="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-bold">Buat</button></div></div></div>
-    <div id="modalJoin" class="fixed inset-0 z-[70] bg-black/50 hidden flex items-center justify-center p-4"><div class="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl"><h3 class="font-bold text-lg mb-4">Gabung Grup</h3><input id="joinRoomCode" class="w-full border p-3 rounded-lg mb-4 text-center tracking-widest uppercase font-bold text-lg" maxlength="7" placeholder="KODE"><div class="flex justify-end gap-2"><button id="btnCloseJoin" class="px-4 py-2 text-gray-500 text-sm">Batal</button><button id="confirmJoinRoom" class="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-bold">Gabung</button></div></div></div>
-    <div id="modalSuccess" class="fixed inset-0 z-[70] bg-black/50 hidden flex items-center justify-center p-4"><div class="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl text-center"><h3 class="font-bold text-lg text-green-600 mb-2">Berhasil!</h3><p class="text-sm text-gray-500">Kode akses:</p><div id="generatedCodeDisplay" class="my-4 text-3xl font-mono font-bold text-gray-800 tracking-widest bg-gray-100 py-2 rounded border-dashed border-2"></div><button id="btnCloseSuccess" class="w-full py-3 bg-gray-900 text-white rounded-lg font-bold">Oke</button></div></div>
+    <div id="modalAccess" class="fixed inset-0 z-[85] bg-black/50 backdrop-blur-sm hidden flex items-center justify-center p-4 fade-in">
+        <div class="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl scale-in">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="font-bold text-lg text-gray-800">Akses & Privasi Grup</h3>
+                <button id="btnCloseAccess" class="text-gray-400 hover:text-red-500 transition"><i class="fas fa-times"></i></button>
+            </div>
+            
+            <p class="text-xs text-gray-500 font-bold uppercase mb-1 tracking-wider">Kode Grup</p>
+            <div class="flex gap-2 mb-5">
+                <input type="text" id="accessCodeDisplay" class="flex-1 font-mono font-bold bg-gray-100 border-none px-3 py-3 rounded-lg text-center tracking-widest text-lg outline-none" readonly>
+                <button id="btnCopyAccessCode" class="bg-indigo-600 text-white px-5 rounded-lg hover:bg-indigo-700 transition shadow"><i class="fas fa-copy"></i></button>
+            </div>
+
+            <p class="text-xs text-gray-500 font-bold uppercase mb-1 tracking-wider">Keamanan & Privasi</p>
+            <div class="flex items-center justify-between p-4 border rounded-xl mb-6 bg-gray-50 shadow-inner">
+                <div>
+                    <p class="text-sm font-bold text-gray-800">Grup Privat</p>
+                    <p class="text-[10px] text-gray-500 leading-tight mt-0.5">Anggota baru butuh persetujuan admin</p>
+                </div>
+                <label class="relative inline-flex items-center cursor-pointer">
+                    <input type="checkbox" id="togglePrivate" class="sr-only peer">
+                    <div class="w-11 h-6 bg-gray-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-500"></div>
+                </label>
+            </div>
+        </div>
+    </div>
+
+    <div id="modalMembers" class="fixed inset-0 z-[80] bg-black/50 backdrop-blur-sm hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl w-full max-w-sm shadow-2xl overflow-hidden animate-fade-in flex flex-col max-h-[90vh]">
+            <div class="bg-indigo-600 p-4 text-white flex justify-between items-center flex-shrink-0 shadow">
+                <h3 class="font-bold text-lg">Anggota Grup</h3>
+                <button id="btnCloseMembers" class="hover:text-gray-200 transition"><i class="fas fa-times"></i></button>
+            </div>
+            
+            <div id="inviteContainer" class="p-4 bg-indigo-50/50 border-b hidden flex-col gap-2 flex-shrink-0">
+                <span class="text-[10px] font-bold text-indigo-600 uppercase tracking-wider">Undang Anggota (User ID)</span>
+                <div class="flex gap-2">
+                    <input type="text" id="inviteUserIdInput" class="flex-1 border border-indigo-200 px-3 py-2.5 rounded-xl text-sm font-bold tracking-widest text-center uppercase outline-none focus:ring-2 focus:ring-indigo-500" placeholder="12 KARAKTER ID" maxlength="12">
+                    <button id="btnInviteUser" class="bg-indigo-600 text-white px-4 py-2.5 rounded-xl text-sm font-bold shadow hover:bg-indigo-700 transition">Undang</button>
+                </div>
+            </div>
+
+            <div id="pendingContainer" class="hidden flex-col border-b flex-shrink-0">
+                <div class="p-3 bg-yellow-50 flex justify-between items-center cursor-pointer border-y border-yellow-100" id="togglePendingBtn">
+                    <span class="text-xs font-bold text-yellow-700 uppercase tracking-wide">Persetujuan Masuk (<span id="pendingCount">0</span>)</span>
+                    <i class="fas fa-chevron-down text-yellow-600 text-xs transition-transform" id="pendingIcon"></i>
+                </div>
+                <div id="pendingListContainer" class="max-h-40 overflow-y-auto bg-white hidden"></div>
+            </div>
+
+            <div class="p-2 bg-gray-50 flex-shrink-0 border-b">
+                <span class="text-[10px] font-bold text-gray-500 uppercase tracking-wider pl-2">Anggota Aktif (<span id="memberCount">0</span>)</span>
+            </div>
+            <div class="overflow-y-auto flex-1 bg-white" id="membersListContainer"></div>
+        </div>
+    </div>
+
+    <div id="modalCreate" class="fixed inset-0 z-[70] bg-black/50 hidden flex items-center justify-center p-4"><div class="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl"><h3 class="font-bold text-lg mb-4">Buat Grup Baru</h3><input id="newRoomName" class="w-full border p-3 rounded-lg mb-4 outline-none focus:ring-2 focus:ring-indigo-500" placeholder="Nama Grup"><div class="flex justify-end gap-2"><button id="btnCloseCreate" class="px-4 py-2 text-gray-500 text-sm font-bold">Batal</button><button id="confirmCreateRoom" class="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-bold shadow hover:bg-indigo-700">Buat</button></div></div></div>
+    <div id="modalJoin" class="fixed inset-0 z-[70] bg-black/50 hidden flex items-center justify-center p-4"><div class="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl"><h3 class="font-bold text-lg mb-4">Gabung Grup</h3><input id="joinRoomCode" class="w-full border p-3 rounded-lg mb-4 text-center tracking-widest uppercase font-bold text-lg outline-none focus:ring-2 focus:ring-indigo-500" maxlength="7" placeholder="KODE"><div class="flex justify-end gap-2"><button id="btnCloseJoin" class="px-4 py-2 text-gray-500 text-sm font-bold">Batal</button><button id="confirmJoinRoom" class="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-bold shadow hover:bg-indigo-700">Masuk</button></div></div></div>
+    <div id="modalSuccess" class="fixed inset-0 z-[70] bg-black/50 hidden flex items-center justify-center p-4"><div class="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl text-center"><h3 class="font-bold text-lg text-green-600 mb-2">Berhasil!</h3><p class="text-sm text-gray-500">Grup dibuat. Ini kode aksesnya:</p><div id="generatedCodeDisplay" class="my-4 text-3xl font-mono font-bold text-gray-800 tracking-widest bg-gray-100 py-2 rounded border-dashed border-2"></div><button id="btnCloseSuccess" class="w-full py-3 bg-gray-900 text-white rounded-lg font-bold hover:bg-black transition">Oke, Mengerti</button></div></div>
+    <div id="modalRename" class="fixed inset-0 z-[75] bg-black/50 hidden flex items-center justify-center p-4"><div class="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl"><h3 class="font-bold text-lg mb-4">Ubah Nama Grup</h3><input id="editRoomNameInput" class="w-full border p-3 rounded-lg mb-4 outline-none focus:ring-2 focus:ring-indigo-500" placeholder="Nama Grup Baru"><div class="flex justify-end gap-2"><button id="btnCloseRename" class="px-4 py-2 text-gray-500 text-sm font-bold">Batal</button><button id="confirmRenameRoom" class="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-bold shadow hover:bg-indigo-700">Simpan</button></div></div></div>
 
     <script type="module" src="script.js"></script>
 </body>
