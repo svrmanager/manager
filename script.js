@@ -1,20 +1,21 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
 import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, onAuthStateChanged, signOut, updateProfile, sendPasswordResetEmail } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
-import { getFirestore, collection, addDoc, query, orderBy, where, onSnapshot, serverTimestamp, updateDoc, arrayUnion, getDocs, doc, getDoc, deleteDoc, writeBatch } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { getFirestore, collection, addDoc, query, orderBy, where, onSnapshot, serverTimestamp, updateDoc, arrayUnion, getDocs, doc, getDoc, deleteDoc, writeBatch, setDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
-// --- CONFIG ---
+// --- CONFIG FIREBASE BARU ANDA ---
 const firebaseConfig = {
-  apiKey: "AIzaSyCsqwNfi53mnOsNX6lXuOrKMWqMLcmoP_g",
-  authDomain: "pvt-chat-bc438.firebaseapp.com",
-  projectId: "pvt-chat-bc438",
-  storageBucket: "pvt-chat-bc438.firebasestorage.app",
-  messagingSenderId: "556863388234",
-  appId: "1:556863388234:web:31b54ef1f79a03576804b3",
-  measurementId: "G-SV7RFSVM45"
+  apiKey: "AIzaSyDXWb4X1xGiURwwvpRWcMkeqEM5CZ8LUIw",
+  authDomain: "servermanager-bd080.firebaseapp.com",
+  projectId: "servermanager-bd080",
+  storageBucket: "servermanager-bd080.firebasestorage.app",
+  messagingSenderId: "602348901704",
+  appId: "1:602348901704:web:8c34e2e15cd1489589cf7d",
+  measurementId: "G-6YNX0BVY4M"
 };
 
-const CLOUDINARY_CLOUD_NAME = "drmgaxtrf"; 
-const CLOUDINARY_PRESET = "pvtchat";   
+// --- CONFIG CLOUDINARY BARU ANDA ---
+const CLOUDINARY_CLOUD_NAME = "douvpolrv"; 
+const CLOUDINARY_PRESET = "svrmanager";   
 
 // --- INIT ---
 const app = initializeApp(firebaseConfig);
@@ -23,6 +24,7 @@ const db = getFirestore(app);
 
 // --- STATE ---
 let currentUser = null;
+let currentCustomUserId = "LOADING..."; 
 let currentRoomId = null;
 let currentRoomData = null;
 let unsubscribeMsg = null; 
@@ -30,7 +32,7 @@ let confirmCallback = null;
 let pendingFiles = []; 
 let currentRoomMessages = []; 
 let searchQuery = ""; 
-let allRoomsData = []; // Untuk manajemen arsip
+let allRoomsData = []; 
 
 let currentSessionPassword = "(Password terenkripsi, masuk via Auto-Login)";
 
@@ -45,7 +47,21 @@ const dom = {
     chatInputArea: document.getElementById('chatInputArea'),
     emptyChatState: document.getElementById('emptyChatState'),
     
-    // Sidebar & Archive
+    // Profiles
+    userProfileBtn: document.getElementById('userProfileBtn'),
+    userAvatarInput: document.getElementById('userAvatarInput'),
+    sidebarUserAvatar: document.getElementById('sidebarUserAvatar'),
+    sidebarUserInitial: document.getElementById('sidebarUserInitial'),
+    sidebarTitle: document.getElementById('sidebarTitle'),
+    sidebarEmail: document.getElementById('sidebarEmail'),
+
+    roomProfileBtn: document.getElementById('roomProfileBtn'),
+    roomProfileOverlay: document.getElementById('roomProfileOverlay'),
+    roomAvatarInput: document.getElementById('roomAvatarInput'),
+    headerRoomAvatar: document.getElementById('headerRoomAvatar'),
+    headerRoomInitial: document.getElementById('headerRoomInitial'),
+
+    // Sidebar
     roomsContainer: document.getElementById('roomsContainer'),
     toggleArchiveBtn: document.getElementById('toggleArchiveBtn'),
     archivedRoomsContainer: document.getElementById('archivedRoomsContainer'),
@@ -54,7 +70,7 @@ const dom = {
     msgInput: document.getElementById('msgInput'),
     sendBtn: document.getElementById('sendBtn'),
     
-    // Auth & Forgot Password
+    // Auth
     loginBox: document.getElementById('loginBox'),
     forgotBox: document.getElementById('forgotBox'),
     showForgotBtn: document.getElementById('showForgotBtn'),
@@ -70,31 +86,23 @@ const dom = {
 
     // Attach
     multiAttachBtn: document.getElementById('multiAttachBtn'),
-    attachMenu: document.getElementById('attachMenu'),
-    menuAttachImgBtn: document.getElementById('menuAttachImgBtn'),
-    menuAttachFileBtn: document.getElementById('menuAttachFileBtn'),
-    multiImageInput: document.getElementById('multiImageInput'),
     multiFileInput: document.getElementById('multiFileInput'),
     multiPreviewContainer: document.getElementById('multiPreviewContainer'),
     multiPreviewList: document.getElementById('multiPreviewList'),
-    addMoreFilesInsideBtn: document.getElementById('addMoreFilesInsideBtn'),
 
-    // Menus & Sidebar
+    // Menus
     groupMenuBtn: document.getElementById('groupMenuBtn'),
     groupMenuDropdown: document.getElementById('groupMenuDropdown'),
     leaveGroupBtn: document.getElementById('leaveGroupBtn'),
     viewMembersBtn: document.getElementById('viewMembersBtn'),
+    renameRoomBtn: document.getElementById('renameRoomBtn'), 
+    accessSettingsBtn: document.getElementById('accessSettingsBtn'),
     
-    // NEW Menu Items
     toggleNotifBtn: document.getElementById('toggleNotifBtn'),
     archiveRoomBtn: document.getElementById('archiveRoomBtn'),
 
-    modalMembers: document.getElementById('modalMembers'),
-    sidebarTitle: document.getElementById('sidebarTitle'),
-    sidebarEmail: document.getElementById('sidebarEmail'),
+    // Modals
     logoutBtn: document.getElementById('logoutBtn'),
-    
-    // UI
     toastContainer: document.getElementById('toastContainer'),
     confirmModal: document.getElementById('confirmModal'),
     imageViewer: document.getElementById('imageViewer'),
@@ -114,12 +122,37 @@ const dom = {
     btnTogglePassword: document.getElementById('btnTogglePassword'),
     logoutActionButtons: document.getElementById('logoutActionButtons'),
     btnCancelLogout: document.getElementById('btnCancelLogout'),
-    btnConfirmLogout: document.getElementById('btnConfirmLogout')
+    btnConfirmLogout: document.getElementById('btnConfirmLogout'),
+    logoutUsernameDisplay: document.getElementById('logoutUsernameDisplay'),
+    btnEditUsername: document.getElementById('btnEditUsername'),
+    btnSaveUsername: document.getElementById('btnSaveUsername'),
+    logoutUserIdDisplay: document.getElementById('logoutUserIdDisplay'),
+    btnCopyUserId: document.getElementById('btnCopyUserId'),
+
+    // Access Settings Modal
+    modalAccess: document.getElementById('modalAccess'),
+    btnCloseAccess: document.getElementById('btnCloseAccess'),
+    accessCodeDisplay: document.getElementById('accessCodeDisplay'),
+    btnCopyAccessCode: document.getElementById('btnCopyAccessCode'),
+    togglePrivate: document.getElementById('togglePrivate'),
+
+    // Members Modal
+    modalMembers: document.getElementById('modalMembers'),
+    btnCloseMembers: document.getElementById('btnCloseMembers'),
+    inviteContainer: document.getElementById('inviteContainer'),
+    inviteUserIdInput: document.getElementById('inviteUserIdInput'),
+    btnInviteUser: document.getElementById('btnInviteUser'),
+    pendingContainer: document.getElementById('pendingContainer'),
+    togglePendingBtn: document.getElementById('togglePendingBtn'),
+    pendingListContainer: document.getElementById('pendingListContainer'),
+    pendingCount: document.getElementById('pendingCount'),
+    pendingIcon: document.getElementById('pendingIcon'),
+    membersListContainer: document.getElementById('membersListContainer'),
+    memberCount: document.getElementById('memberCount'),
 };
 
 // --- NAVIGATION & HARDWARE BACK BUTTON (HISTORY API) ---
 window.addEventListener('popstate', (e) => {
-    // Jika panel chat sedang terbuka di layar kecil, tombol kembali akan menutup chat
     if (window.innerWidth < 768 && !dom.chatPanel.classList.contains('translate-x-full')) {
         dom.roomListPanel.classList.remove('-translate-x-full');
         dom.chatPanel.classList.add('translate-x-full');
@@ -151,12 +184,42 @@ window.showCustomConfirm = (title, msg, callback) => {
 document.getElementById('btnCancelConfirm').onclick = () => dom.confirmModal.classList.add('hidden');
 document.getElementById('btnOkConfirm').onclick = () => { if(confirmCallback) confirmCallback(); dom.confirmModal.classList.add('hidden'); };
 
-// --- LOGOUT FLOW ---
+function checkIsAdmin() {
+    if(!currentRoomData || !currentUser) return false;
+    return currentRoomData.admins ? currentRoomData.admins.includes(currentUser.uid) : (currentRoomData.createdBy === currentUser.email);
+}
+
+// --- UPLOAD HELPER ---
+async function uploadToCloudinary(file) {
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("upload_preset", CLOUDINARY_PRESET);
+    let resourceType = 'raw';
+    if (file.type.startsWith('image/')) resourceType = 'image';
+    else if (file.type.startsWith('video/')) resourceType = 'video';
+    const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/${resourceType}/upload`, { method: "POST", body: formData });
+    const data = await res.json();
+    if(data.error) throw new Error(data.error.message);
+    return { url: data.secure_url, type: resourceType };
+}
+
+// --- LOGOUT / ACCOUNT INFO FLOW ---
 dom.logoutBtn.onclick = () => {
     dom.logoutModal.classList.remove('hidden');
     dom.logoutTitle.innerText = "Informasi Akun";
-    dom.logoutEmailDisplay.innerText = currentUser.email;
     
+    const dName = currentUser.displayName || currentUser.email.split('@')[0];
+    dom.logoutUsernameDisplay.value = dName;
+    dom.logoutUsernameDisplay.setAttribute("readonly", true);
+    dom.logoutUsernameDisplay.classList.add("border-transparent");
+    dom.logoutUsernameDisplay.classList.remove("border-gray-400", "border-dashed");
+    
+    dom.logoutUserIdDisplay.value = currentCustomUserId;
+
+    dom.btnEditUsername.classList.remove("hidden");
+    dom.btnSaveUsername.classList.add("hidden");
+
+    dom.logoutEmailDisplay.innerText = currentUser.email;
     dom.logoutPasswordDisplay.innerText = "********";
     dom.logoutPasswordDisplay.classList.add("tracking-widest");
     
@@ -166,8 +229,44 @@ dom.logoutBtn.onclick = () => {
     dom.logoutActionButtons.classList.remove('flex');
 };
 
+dom.btnCopyUserId.onclick = () => {
+    navigator.clipboard.writeText(currentCustomUserId);
+    showToast("User ID disalin ke clipboard", "success");
+};
+
+dom.btnEditUsername.onclick = () => {
+    dom.logoutUsernameDisplay.removeAttribute("readonly");
+    dom.logoutUsernameDisplay.classList.remove("border-transparent");
+    dom.logoutUsernameDisplay.classList.add("border-gray-400", "border-dashed");
+    dom.logoutUsernameDisplay.focus();
+    
+    dom.btnEditUsername.classList.add("hidden");
+    dom.btnSaveUsername.classList.remove("hidden");
+};
+
+dom.btnSaveUsername.onclick = async () => {
+    const newName = dom.logoutUsernameDisplay.value.trim();
+    if(!newName) return showToast("Username tidak boleh kosong", "error");
+    
+    try {
+        await updateProfile(currentUser, { displayName: newName });
+        await updateDoc(doc(db, "users", currentUser.uid), { displayName: newName });
+        
+        updateSidebarProfile();
+        showToast("Username berhasil diperbarui!", "success");
+        
+        dom.logoutUsernameDisplay.setAttribute("readonly", true);
+        dom.logoutUsernameDisplay.classList.add("border-transparent");
+        dom.logoutUsernameDisplay.classList.remove("border-gray-400", "border-dashed");
+        dom.btnEditUsername.classList.remove("hidden");
+        dom.btnSaveUsername.classList.add("hidden");
+    } catch (e) {
+        showToast("Gagal update username: " + e.message, "error");
+    }
+};
+
 dom.btnTogglePassword.onclick = () => {
-    dom.logoutTitle.innerText = "Keluar Sekarang, Pastikan ingat pasword login anda :";
+    dom.logoutTitle.innerText = "Keluar Sekarang, Pastikan ingat password Anda:";
     dom.logoutPasswordDisplay.innerText = currentSessionPassword;
     dom.logoutPasswordDisplay.classList.remove("tracking-widest");
     
@@ -177,11 +276,74 @@ dom.btnTogglePassword.onclick = () => {
 };
 
 dom.btnCancelLogout.onclick = () => dom.logoutModal.classList.add('hidden');
-
 dom.btnConfirmLogout.onclick = () => {
     dom.logoutModal.classList.add('hidden');
     currentSessionPassword = "(Password terenkripsi, masuk via Auto-Login)"; 
     signOut(auth);
+};
+
+// --- PROFILE PICTURES LOGIC ---
+function updateSidebarProfile() {
+    const dName = currentUser.displayName || currentUser.email.split('@')[0];
+    dom.sidebarTitle.innerText = dName; 
+    dom.sidebarEmail.innerText = currentUser.email; 
+    
+    if (currentUser.photoURL) {
+        dom.sidebarUserAvatar.src = currentUser.photoURL;
+        dom.sidebarUserAvatar.classList.remove('hidden');
+        dom.sidebarUserInitial.classList.add('hidden');
+    } else {
+        dom.sidebarUserInitial.innerText = dName[0].toUpperCase();
+        dom.sidebarUserInitial.classList.remove('hidden');
+        dom.sidebarUserAvatar.classList.add('hidden');
+    }
+}
+
+dom.userProfileBtn.onclick = () => dom.userAvatarInput.click();
+dom.userAvatarInput.onchange = async (e) => {
+    const file = e.target.files[0];
+    if(!file) return;
+    
+    showToast("Mengunggah foto profil...", "success");
+    dom.userProfileBtn.classList.add("animate-pulse");
+    try {
+        const uploadData = await uploadToCloudinary(file);
+        await updateProfile(currentUser, { photoURL: uploadData.url });
+        updateSidebarProfile();
+        showToast("Foto profil diperbarui!", "success");
+    } catch(err) { 
+        showToast("Gagal: " + err.message, "error"); 
+    } finally {
+        dom.userProfileBtn.classList.remove("animate-pulse");
+        e.target.value = '';
+    }
+};
+
+dom.roomProfileBtn.onclick = () => {
+    if(!currentRoomData) return;
+    if(checkIsAdmin()) {
+        dom.roomAvatarInput.click();
+    } else {
+        showToast("Hanya Admin yang dapat mengubah foto grup.", "error");
+    }
+};
+
+dom.roomAvatarInput.onchange = async (e) => {
+    const file = e.target.files[0];
+    if(!file || !currentRoomId) return;
+    
+    showToast("Mengunggah foto grup...", "success");
+    dom.roomProfileBtn.classList.add("animate-pulse");
+    try {
+        const uploadData = await uploadToCloudinary(file);
+        await updateDoc(doc(db, "rooms", currentRoomId), { avatarUrl: uploadData.url });
+        showToast("Foto grup diperbarui!", "success");
+    } catch(err) { 
+        showToast("Gagal: " + err.message, "error"); 
+    } finally {
+        dom.roomProfileBtn.classList.remove("animate-pulse");
+        e.target.value = '';
+    }
 };
 
 // --- VIEWER ---
@@ -229,9 +391,6 @@ document.addEventListener('click', (e) => {
     if (!dom.downloadOptions.contains(e.target) && !dom.viewerMainDownloadBtn.contains(e.target)) {
         dom.downloadOptions.classList.add('hidden');
     }
-    if (!dom.attachMenu.contains(e.target) && !dom.multiAttachBtn.contains(e.target) && !dom.addMoreFilesInsideBtn.contains(e.target)) {
-        dom.attachMenu.classList.add('hidden');
-    }
 });
 
 document.getElementById('closeImageViewer').onclick = () => {
@@ -265,28 +424,29 @@ window.downloadFile = async (url, filename) => {
     }
 };
 
-// --- MULTI ATTACHMENT ---
-dom.multiAttachBtn.onclick = (e) => {
-    e.stopPropagation();
-    dom.attachMenu.classList.toggle('hidden');
-};
-dom.addMoreFilesInsideBtn.onclick = (e) => {
-    e.stopPropagation();
-    dom.attachMenu.classList.remove('hidden');
-};
+// --- ATTACHMENT ---
+dom.multiAttachBtn.onclick = () => dom.multiFileInput.click();
 
-dom.menuAttachImgBtn.onclick = () => { dom.multiImageInput.click(); dom.attachMenu.classList.add('hidden'); };
-dom.menuAttachFileBtn.onclick = () => { dom.multiFileInput.click(); dom.attachMenu.classList.add('hidden'); };
+// --- ATTACHMENT ---
+dom.multiAttachBtn.onclick = () => dom.multiFileInput.click();
 
 function handleFileSelection(e) {
-    if(e.target.files.length > 0) {
-        pendingFiles = pendingFiles.concat(Array.from(e.target.files));
+    const files = Array.from(e.target.files);
+    const validFiles = files.filter(file => {
+        if (file.size > 10 * 1024 * 1024) { 
+            showToast(`File ${file.name} terlalu besar (Max 10MB)`, "error");
+            return false;
+        }
+        return true;
+    });
+
+    if(validFiles.length > 0) {
+        pendingFiles = pendingFiles.concat(validFiles);
         renderPendingFiles();
     }
     e.target.value = ''; 
 }
-
-dom.multiImageInput.onchange = handleFileSelection;
+dom.multiFileInput.onchange = handleFileSelection;
 dom.multiFileInput.onchange = handleFileSelection;
 
 window.removePendingFile = (index) => {
@@ -349,16 +509,33 @@ dom.searchInput.oninput = (e) => {
     renderAllMessages(); 
 };
 
-// --- AUTH SYSTEM & LUPA PASSWORD ---
-onAuthStateChanged(auth, (user) => {
+// --- AUTH SYSTEM ---
+onAuthStateChanged(auth, async (user) => {
     if (user) {
         currentUser = user;
         dom.authOverlay.classList.add('hidden');
         dom.appContainer.classList.remove('hidden');
-        const displayName = user.displayName || user.email.split('@')[0];
-        dom.sidebarTitle.innerText = displayName; 
-        dom.sidebarEmail.innerText = user.email; 
+        
+        updateSidebarProfile();
         loadRooms(); 
+
+        try {
+            const userRef = doc(db, "users", user.uid);
+            const userSnap = await getDoc(userRef);
+            const dName = user.displayName || user.email.split('@')[0];
+
+            if (userSnap.exists()) {
+                currentCustomUserId = userSnap.data().userId;
+                await updateDoc(userRef, { email: user.email, displayName: dName });
+            } else {
+                const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'; 
+                let newId = ''; 
+                for(let i=0; i<12; i++) newId += chars.charAt(Math.floor(Math.random() * chars.length));
+                currentCustomUserId = newId;
+                await setDoc(userRef, { userId: currentCustomUserId, email: user.email, displayName: dName });
+            }
+        } catch (e) { console.error("Error setting user ID:", e); }
+
     } else {
         dom.authOverlay.classList.remove('hidden');
         dom.appContainer.classList.add('hidden');
@@ -381,7 +558,6 @@ dom.backToLoginBtn.onclick = () => {
 dom.sendResetBtn.onclick = async () => {
     const email = dom.forgotEmailInput.value.trim();
     if (!email) return showToast("Masukkan alamat email Anda terlebih dahulu!", "error");
-
     dom.sendResetBtn.disabled = true;
     dom.sendResetBtn.innerText = "Mengirim...";
     try {
@@ -437,6 +613,9 @@ document.getElementById('btnOpenJoin').onclick = () => toggleModal('modalJoin', 
 document.getElementById('btnCloseCreate').onclick = () => toggleModal('modalCreate', false);
 document.getElementById('btnCloseJoin').onclick = () => toggleModal('modalJoin', false);
 document.getElementById('btnCloseSuccess').onclick = () => toggleModal('modalSuccess', false);
+document.getElementById('btnCloseRename').onclick = () => toggleModal('modalRename', false);
+dom.btnCloseAccess.onclick = () => toggleModal('modalAccess', false);
+dom.btnCloseMembers.onclick = () => toggleModal('modalMembers', false);
 
 // --- GROUP LOGIC ---
 document.getElementById('confirmCreateRoom').onclick = async () => {
@@ -447,26 +626,44 @@ document.getElementById('confirmCreateRoom').onclick = async () => {
         const myProfile = { uid: currentUser.uid, email: currentUser.email, username: currentUser.displayName || currentUser.email };
         await addDoc(collection(db, "rooms"), {
             name: name, code: code, members: [myProfile], memberIds: [currentUser.uid], 
-            createdBy: currentUser.email, createdAt: serverTimestamp()
+            createdBy: currentUser.email, 
+            admins: [currentUser.uid], 
+            avatarUrl: null, 
+            isPrivate: false, 
+            pendingMembers: [],
+            createdAt: serverTimestamp()
         });
         toggleModal('modalCreate', false); toggleModal('modalSuccess', true);
         document.getElementById('generatedCodeDisplay').innerText = code;
+        document.getElementById('newRoomName').value = '';
     } catch (e) { showToast(e.message, 'error'); }
 };
 
 document.getElementById('confirmJoinRoom').onclick = async () => {
     const code = document.getElementById('joinRoomCode').value.toUpperCase();
+    if(!code) return;
     const q = query(collection(db, "rooms"), where("code", "==", code));
     const snap = await getDocs(q);
-    if(snap.empty) return showToast("Kode salah!", 'error');
+    if(snap.empty) return showToast("Kode salah atau tidak ditemukan!", 'error');
+    
     const roomDoc = snap.docs[0];
     const roomData = roomDoc.data();
-    if(roomData.memberIds && roomData.memberIds.includes(currentUser.uid)) return showToast("Sudah bergabung.", 'error');
+    
+    if(roomData.memberIds && roomData.memberIds.includes(currentUser.uid)) return showToast("Anda sudah berada di grup ini.", 'error');
+    if(roomData.pendingMembers && roomData.pendingMembers.some(m => m.uid === currentUser.uid)) return showToast("Menunggu persetujuan admin grup.", 'error');
 
     try {
-        const myProfile = { uid: currentUser.uid, email: currentUser.email, username: currentUser.displayName || currentUser.email };
-        await updateDoc(roomDoc.ref, { members: arrayUnion(myProfile), memberIds: arrayUnion(currentUser.uid) });
-        toggleModal('modalJoin', false); showToast("Berhasil bergabung!", 'success');
+        const myProfile = { uid: currentUser.uid, email: currentUser.email, username: currentUser.displayName || currentUser.email.split('@')[0] };
+        
+        if (roomData.isPrivate) {
+            await updateDoc(roomDoc.ref, { pendingMembers: arrayUnion(myProfile) });
+            showToast("Permintaan bergabung dikirim ke Admin.", 'success');
+        } else {
+            await updateDoc(roomDoc.ref, { members: arrayUnion(myProfile), memberIds: arrayUnion(currentUser.uid) });
+            showToast("Berhasil bergabung ke grup!", 'success');
+        }
+        toggleModal('modalJoin', false); 
+        document.getElementById('joinRoomCode').value = '';
     } catch (e) { showToast(e.message, 'error'); }
 };
 
@@ -484,9 +681,22 @@ function renderRoomsList() {
     allRoomsData.forEach(data => {
         const el = document.createElement('div');
         el.className = "p-3 bg-white border border-gray-100 rounded-xl cursor-pointer hover:bg-indigo-50 hover:border-indigo-200 transition flex items-center gap-3";
+        
+        let avatarHtml = '';
+        if(data.avatarUrl) {
+            avatarHtml = `<img src="${data.avatarUrl}" class="w-10 h-10 rounded-full object-cover shadow-sm">`;
+        } else {
+            avatarHtml = `<div class="w-10 h-10 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 text-white flex items-center justify-center font-bold text-sm shadow-sm">${data.name[0].toUpperCase()}</div>`;
+        }
+        
+        const privateIcon = data.isPrivate ? '<i class="fas fa-lock text-[8px] text-gray-400 ml-1" title="Grup Privat"></i>' : '';
+
         el.innerHTML = `
-            <div class="w-10 h-10 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 text-white flex items-center justify-center font-bold text-sm shadow-sm">${data.name[0].toUpperCase()}</div>
-            <div class="overflow-hidden"><h4 class="font-bold text-gray-800 text-sm truncate w-full">${data.name}</h4><p class="text-[10px] text-gray-400 font-mono bg-gray-100 px-1 rounded inline-block">Code: ${data.code}</p></div>
+            <div class="flex-shrink-0">${avatarHtml}</div>
+            <div class="overflow-hidden w-full">
+                <h4 class="font-bold text-gray-800 text-sm truncate w-full flex items-center">${data.name} ${privateIcon}</h4>
+                <p class="text-[10px] text-gray-400">${data.members ? data.members.length : 0} Anggota</p>
+            </div>
         `;
         el.onclick = () => openChatRoom(data.id, data);
         
@@ -506,25 +716,65 @@ function loadRooms() {
             const data = doc.data();
             data.id = doc.id;
             allRoomsData.push(data);
+            
+            if(data.id === currentRoomId) {
+                currentRoomData = data;
+                document.getElementById('activeRoomName').innerText = data.name;
+                updateHeaderRoomProfile();
+                
+                if (!dom.modalMembers.classList.contains('hidden')) {
+                    renderMembersModal();
+                }
+            }
         });
         renderRoomsList();
+    }, (error) => {
+        console.error("Error load rooms:", error);
+        showToast("Error memuat grup: " + error.message, "error");
     });
+}
+
+function updateHeaderRoomProfile() {
+    if(!currentRoomData) return;
+    
+    if (currentRoomData.avatarUrl) {
+        dom.headerRoomAvatar.src = currentRoomData.avatarUrl;
+        dom.headerRoomAvatar.classList.remove('hidden');
+        dom.headerRoomInitial.classList.add('hidden');
+    } else {
+        dom.headerRoomInitial.innerText = currentRoomData.name[0].toUpperCase();
+        dom.headerRoomInitial.classList.remove('hidden');
+        dom.headerRoomAvatar.classList.add('hidden');
+    }
+
+    if (checkIsAdmin()) {
+        dom.roomProfileOverlay.classList.remove('hidden');
+        dom.renameRoomBtn.classList.remove('hidden');
+        dom.accessSettingsBtn.classList.remove('hidden');
+    } else {
+        dom.roomProfileOverlay.classList.add('hidden');
+        dom.renameRoomBtn.classList.add('hidden');
+        dom.accessSettingsBtn.classList.add('hidden');
+    }
 }
 
 function openChatRoom(roomId, roomData) {
     currentRoomId = roomId;
     currentRoomData = roomData;
+    
     document.getElementById('activeRoomName').innerText = roomData.name;
-    document.getElementById('activeRoomCode').innerText = roomData.code;
+    updateHeaderRoomProfile();
+
+    dom.chatBox.innerHTML = '<div class="absolute inset-0 flex flex-col justify-center items-center bg-white z-10"><i class="fas fa-circle-notch fa-spin text-4xl text-indigo-500 mb-3"></i><span class="text-sm font-bold text-gray-400 animate-pulse">Mengambil data obrolan...</span></div>';
+    currentRoomMessages = []; 
 
     dom.searchContainer.classList.add('hidden');
     dom.searchContainer.classList.remove('flex');
     dom.searchInput.value = '';
     searchQuery = '';
-    updateDropdownMenuText(); // Sinkronkan text tombol Notif & Arsip
+    updateDropdownMenuText(); 
 
     if (window.innerWidth < 768) {
-        // Daftarkan ke History API saat membuka obrolan baru dari dashboard
         if (dom.chatPanel.classList.contains('translate-x-full')) {
             history.pushState({ page: 'chat' }, '', '#chat');
         }
@@ -541,11 +791,10 @@ function openChatRoom(roomId, roomData) {
 }
 
 document.getElementById('backToDashboard').onclick = () => {
-    // Memanggil API Kembali Bawaan (Browser/HP) agar urutan tetap sinkron
     history.back(); 
 };
 
-// --- MENU TITIK 3 (NOTIF & ARSIP) ---
+// --- MENU TITIK 3 ---
 function updateDropdownMenuText() {
     let archivedList = JSON.parse(localStorage.getItem(`archive_${currentUser.uid}`) || '[]');
     let notifList = JSON.parse(localStorage.getItem(`notif_${currentUser.uid}`) || '[]');
@@ -564,6 +813,46 @@ dom.groupMenuBtn.onclick = () => {
     dom.groupMenuDropdown.classList.toggle('hidden');
 };
 
+dom.renameRoomBtn.onclick = () => {
+    dom.groupMenuDropdown.classList.add('hidden');
+    document.getElementById('editRoomNameInput').value = currentRoomData.name;
+    toggleModal('modalRename', true);
+};
+
+document.getElementById('confirmRenameRoom').onclick = async () => {
+    const newName = document.getElementById('editRoomNameInput').value.trim();
+    if(!newName) return;
+    try {
+        await updateDoc(doc(db, "rooms", currentRoomId), { name: newName });
+        toggleModal('modalRename', false);
+        showToast("Nama grup berhasil diubah", "success");
+    } catch (e) { showToast(e.message, 'error'); }
+};
+
+// AKSES & KODE GRUP (Admin)
+dom.accessSettingsBtn.onclick = () => {
+    dom.groupMenuDropdown.classList.add('hidden');
+    dom.accessCodeDisplay.value = currentRoomData.code;
+    dom.togglePrivate.checked = currentRoomData.isPrivate || false;
+    toggleModal('modalAccess', true);
+};
+
+dom.btnCopyAccessCode.onclick = () => {
+    navigator.clipboard.writeText(currentRoomData.code);
+    showToast("Kode grup disalin!", "success");
+};
+
+dom.togglePrivate.onchange = async (e) => {
+    const isPrivat = e.target.checked;
+    try {
+        await updateDoc(doc(db, "rooms", currentRoomId), { isPrivate: isPrivat });
+        showToast(`Grup diubah menjadi ${isPrivat ? 'Privat' : 'Publik'}`, "success");
+    } catch (err) {
+        showToast(err.message, "error");
+        e.target.checked = !isPrivat; // revert
+    }
+};
+
 dom.archiveRoomBtn.onclick = () => {
     dom.groupMenuDropdown.classList.add('hidden');
     let archivedList = JSON.parse(localStorage.getItem(`archive_${currentUser.uid}`) || '[]');
@@ -573,7 +862,7 @@ dom.archiveRoomBtn.onclick = () => {
     } else {
         archivedList.push(currentRoomId);
         showToast("Chat diarsipkan", "success");
-        if (window.innerWidth < 768) history.back(); // Otomatis kembali jika di HP
+        if (window.innerWidth < 768) history.back(); 
     }
     localStorage.setItem(`archive_${currentUser.uid}`, JSON.stringify(archivedList));
     renderRoomsList();
@@ -582,14 +871,11 @@ dom.archiveRoomBtn.onclick = () => {
 
 dom.toggleNotifBtn.onclick = async () => {
     dom.groupMenuDropdown.classList.add('hidden');
-    
     if (Notification.permission !== "granted") {
         try {
             const perm = await Notification.requestPermission();
             if (perm !== "granted") return showToast("Izin notifikasi ditolak browser.", "error");
-        } catch (e) {
-            return showToast("Browser tidak mendukung notifikasi", "error");
-        }
+        } catch (e) { return showToast("Browser tidak mendukung notifikasi", "error"); }
     }
     
     let notifList = JSON.parse(localStorage.getItem(`notif_${currentUser.uid}`) || '[]');
@@ -604,7 +890,6 @@ dom.toggleNotifBtn.onclick = async () => {
     updateDropdownMenuText();
 };
 
-// Fungsi Pemicu Notifikasi
 function checkAndShowNotification(roomId, msgData) {
     let notifList = JSON.parse(localStorage.getItem(`notif_${currentUser.uid}`) || '[]');
     if (notifList.includes(roomId) && Notification.permission === "granted") {
@@ -619,23 +904,20 @@ function checkAndShowNotification(roomId, msgData) {
     }
 }
 
-// --- MESSAGES LOGIC & SEARCH RENDER ---
+// --- MESSAGES LOGIC ---
 function loadMessages(roomId) {
     if (unsubscribeMsg) unsubscribeMsg();
-    const q = query(collection(db, "messages"), where("roomId", "==", roomId), orderBy("timestamp", "asc"));
-
-    let isFirstLoad = true; // Pencegah spam notifikasi saat baru buka room
+    
+    // MENGHAPUS orderBy() agar tidak membutuhkan index komposit (Solusi Loading Lama di Database Baru)
+    const q = query(collection(db, "messages"), where("roomId", "==", roomId));
+    let isFirstLoad = true; 
     
     unsubscribeMsg = onSnapshot(q, (snap) => {
         currentRoomMessages = []; 
-        
-        // Cek pesan yang benar-benar BARU untuk memicu notifikasi
         snap.docChanges().forEach((change) => {
             if (change.type === "added" && !isFirstLoad) {
                 const msgData = change.doc.data();
-                if (msgData.uid !== currentUser.uid) {
-                    checkAndShowNotification(roomId, msgData);
-                }
+                if (msgData.uid !== currentUser.uid) { checkAndShowNotification(roomId, msgData); }
             }
         });
         
@@ -644,9 +926,19 @@ function loadMessages(roomId) {
             msgData.id = doc.id;
             currentRoomMessages.push(msgData);
         });
-        
+
+        // Pengurutan waktu lokal JS (Menghindari error index Firebase)
+        currentRoomMessages.sort((a, b) => {
+            const timeA = (a.timestamp && typeof a.timestamp.toMillis === 'function') ? a.timestamp.toMillis() : Date.now();
+            const timeB = (b.timestamp && typeof b.timestamp.toMillis === 'function') ? b.timestamp.toMillis() : Date.now();
+            return timeA - timeB;
+        });
+
         isFirstLoad = false;
         renderAllMessages(); 
+    }, (error) => {
+        console.error("Error load messages:", error);
+        dom.chatBox.innerHTML = `<div class="p-6 text-center text-red-500 font-bold mt-10 bg-red-50 rounded-2xl mx-4 shadow-sm border border-red-100">Gagal Mengambil Obrolan: <br><span class="text-xs font-normal text-red-400 mt-2 block">${error.message}</span></div>`;
     });
 }
 
@@ -660,19 +952,14 @@ function renderAllMessages() {
 
     const filteredMessages = currentRoomMessages.filter(msg => {
         if (!searchQuery) return true; 
-        
         if (isSearchingImage && (msg.type === 'image' || (msg.attachments && msg.attachments.some(a => a.type === 'image')))) return true;
         if (isSearchingVideo && (msg.type === 'video' || (msg.attachments && msg.attachments.some(a => a.type === 'video')))) return true;
         if (isSearchingFile && (msg.type === 'raw' || (msg.attachments && msg.attachments.some(a => a.type === 'raw')))) return true;
-
         if (msg.text && msg.text.toLowerCase().includes(searchQuery)) return true;
-        
         if (msg.fileName && msg.fileName.toLowerCase().includes(searchQuery)) return true;
-        
         if (msg.attachments && msg.attachments.length > 0) {
             return msg.attachments.some(att => att.fileName && att.fileName.toLowerCase().includes(searchQuery));
         }
-        
         return false; 
     });
 
@@ -684,10 +971,9 @@ function renderAllMessages() {
     filteredMessages.forEach(msgData => {
         const msgDate = msgData.timestamp ? msgData.timestamp.toDate() : new Date();
         const currentDateString = msgDate.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
-
         if (currentDateString !== lastDateString) {
             const divider = document.createElement('div');
-            divider.className = "flex justify-center items-center my-6 select-none";
+            divider.className = "flex justify-center items-center my-6 select-none relative z-0";
             divider.innerHTML = `
                 <div class="h-px bg-gray-200 flex-1"></div>
                 <span class="px-4 py-1 rounded-full bg-gray-50 border text-[10px] font-bold text-gray-500 uppercase tracking-widest">${currentDateString}</span>
@@ -696,7 +982,6 @@ function renderAllMessages() {
             dom.chatBox.appendChild(divider);
             lastDateString = currentDateString;
         }
-
         renderMessage(msgData);
     });
     
@@ -719,7 +1004,7 @@ function renderMessage(msg) {
     const isMe = msg.uid === currentUser.uid;
     const senderName = msg.username || msg.email.split('@')[0];
     const div = document.createElement('div');
-    div.className = `flex w-full mb-4 ${isMe ? 'justify-end' : 'justify-start'} animate-fade-in group`;
+    div.className = `flex w-full mb-4 ${isMe ? 'justify-end' : 'justify-start'} animate-fade-in group relative z-0`;
 
     const deleteBtn = (isMe && !msg.isDeleted) ? 
         `<button onclick="deleteMessage('${msg.id}')" class="text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition ml-2" title="Hapus"><i class="fas fa-trash-alt"></i></button>` : '';
@@ -736,7 +1021,6 @@ function renderMessage(msg) {
         contentHtml = `<div class="flex items-center gap-2 text-gray-400 italic text-sm py-1"><i class="fas fa-ban text-xs"></i> <span>Pesan dihapus</span></div>`;
     } else {
         let mediaContent = '';
-        
         let attachmentsToRender = msg.attachments || [];
         if (msg.fileUrl && attachmentsToRender.length === 0) {
             attachmentsToRender.push({ fileUrl: msg.fileUrl, fileName: msg.fileName, type: msg.type });
@@ -748,20 +1032,20 @@ function renderMessage(msg) {
                 const safeName = (att.fileName || 'file_terlampir').replace(/'/g, "\\'");
                 if(att.type === 'image') {
                     mediaContent += `
-                        <div class="relative inline-block">
+                        <div class="relative inline-block z-10">
                             <img src="${att.fileUrl}" class="rounded-lg h-28 w-auto object-cover border bg-black/10 cursor-pointer hover:opacity-90 transition" 
                             onclick="viewImage('${att.fileUrl}', 'image', '${safeName}')">
                         </div>`;
                 } else if (att.type === 'video') {
                     mediaContent += `
-                        <div class="relative inline-block h-28 w-auto">
+                        <div class="relative inline-block h-28 w-auto z-10">
                             <video src="${att.fileUrl}" class="rounded-lg h-full object-cover border bg-black/10 cursor-pointer" onclick="viewImage('${att.fileUrl}', 'video', '${safeName}')"></video>
-                            <button onclick="viewImage('${att.fileUrl}', 'video', '${safeName}')" class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-black/50 hover:bg-indigo-600 transition text-white w-10 h-10 rounded-full flex items-center justify-center"><i class="fas fa-play"></i></button>
+                            <button onclick="viewImage('${att.fileUrl}', 'video', '${safeName}')" class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-black/50 hover:bg-indigo-600 transition text-white w-10 h-10 rounded-full flex items-center justify-center pointer-events-none"><i class="fas fa-play"></i></button>
                         </div>`;
                 } else {
                     const dName = att.fileName || 'File Terlampir';
                     mediaContent += `
-                        <div class="relative inline-block mb-1 w-full max-w-[250px]">
+                        <div class="relative inline-block mb-1 w-full max-w-[250px] z-10">
                             <div class="flex items-center gap-3 p-2 bg-black/5 hover:bg-black/10 transition border rounded-lg">
                                 <div class="bg-white border text-indigo-600 w-10 h-10 rounded flex items-center justify-center flex-shrink-0 shadow-sm">
                                     <i class="fas fa-file-alt text-xl"></i>
@@ -790,7 +1074,6 @@ function renderMessage(msg) {
     }
 
     const bubbleClass = isMe ? 'bg-[#d9fdd3] text-gray-800 rounded-tr-none' : 'bg-white text-gray-800 rounded-tl-none border';
-    
     const msgDate = msg.timestamp ? msg.timestamp.toDate() : new Date();
     const timeString = msgDate.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', hour12: false }).replace('.', ':');
 
@@ -807,6 +1090,19 @@ function renderMessage(msg) {
     dom.chatBox.appendChild(div);
 }
 
+// --- TEXTAREA AUTO EXPAND ---
+dom.msgInput.addEventListener('input', function() {
+    this.style.height = 'auto';
+    this.style.height = (this.scrollHeight) + 'px'; 
+    if (this.value === '') { this.style.height = 'auto'; }
+});
+dom.msgInput.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault(); 
+        dom.sendBtn.click(); 
+    }
+});
+
 // --- SEND MESSAGE ---
 dom.sendBtn.onclick = async () => {
     if (!currentRoomId) return;
@@ -815,30 +1111,11 @@ dom.sendBtn.onclick = async () => {
 
     dom.sendBtn.disabled = true;
     dom.sendBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>'; 
-
     let finalAttachments = [];
 
     try {
         if (pendingFiles.length > 0) {
-            const uploadPromises = pendingFiles.map(async (file) => {
-                const formData = new FormData();
-                formData.append("file", file);
-                formData.append("upload_preset", CLOUDINARY_PRESET);
-                
-                let resourceType = 'raw';
-                if (file.type.startsWith('image/')) resourceType = 'image';
-                else if (file.type.startsWith('video/')) resourceType = 'video';
-                
-                const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/${resourceType}/upload`, { method: "POST", body: formData });
-                const data = await res.json();
-                
-                return {
-                    fileUrl: data.secure_url,
-                    fileName: file.name,
-                    type: resourceType
-                };
-            });
-
+            const uploadPromises = pendingFiles.map(file => uploadToCloudinary(file).then(data => ({ fileUrl: data.url, fileName: file.name, type: data.type })));
             finalAttachments = await Promise.all(uploadPromises);
         }
 
@@ -854,6 +1131,7 @@ dom.sendBtn.onclick = async () => {
         });
 
         dom.msgInput.value = '';
+        dom.msgInput.style.height = 'auto';
         pendingFiles = [];
         renderPendingFiles();
 
@@ -865,33 +1143,174 @@ dom.sendBtn.onclick = async () => {
     }
 };
 
-// --- GROUP MENU OTHER ACTIONS ---
+// --- ANGGOTA & PERSETUJUAN LOGIC ---
 dom.viewMembersBtn.onclick = () => {
     dom.groupMenuDropdown.classList.add('hidden');
-    dom.modalMembers.classList.remove('hidden');
-    const list = document.getElementById('membersListContainer');
-    list.innerHTML = '';
+    renderMembersModal();
+    toggleModal('modalMembers', true);
+};
+
+function renderMembersModal() {
+    if(!currentRoomData) return;
+    
+    dom.membersListContainer.innerHTML = '';
+    dom.pendingListContainer.innerHTML = '';
+    
     const members = currentRoomData.members || []; 
-    document.getElementById('memberCount').innerText = members.length;
+    const pendingMembers = currentRoomData.pendingMembers || [];
+    
+    dom.memberCount.innerText = members.length;
+    dom.pendingCount.innerText = pendingMembers.length;
+    
+    const iAmAdmin = checkIsAdmin();
+
+    if (iAmAdmin) {
+        dom.inviteContainer.classList.remove('hidden');
+        dom.inviteContainer.classList.add('flex');
+        
+        if(pendingMembers.length > 0) {
+            dom.pendingContainer.classList.remove('hidden');
+            dom.pendingContainer.classList.add('flex');
+        } else {
+            dom.pendingContainer.classList.add('hidden');
+            dom.pendingContainer.classList.remove('flex');
+        }
+    } else {
+        dom.inviteContainer.classList.add('hidden');
+        dom.inviteContainer.classList.remove('flex');
+        dom.pendingContainer.classList.add('hidden');
+        dom.pendingContainer.classList.remove('flex');
+    }
+
+    pendingMembers.forEach(m => {
+        const name = m.username || m.email.split('@')[0];
+        const uid = m.uid;
+        const item = document.createElement('div');
+        item.className = "flex justify-between items-center p-3 border-b border-gray-100 bg-white hover:bg-gray-50";
+        item.innerHTML = `
+            <div class="flex items-center gap-3">
+                <div class="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-xs font-bold text-gray-600">${name[0].toUpperCase()}</div>
+                <div>
+                    <p class="text-sm font-bold text-gray-800">${name}</p>
+                    <p class="text-[9px] text-gray-500">Minta masuk grup</p>
+                </div>
+            </div>
+            <div class="flex gap-1">
+                <button onclick="rejectMember('${uid}')" class="text-xs bg-red-100 text-red-600 px-3 py-1.5 rounded-lg font-bold hover:bg-red-200 transition"><i class="fas fa-times"></i></button>
+                <button onclick="acceptMember('${uid}')" class="text-xs bg-green-500 text-white px-3 py-1.5 rounded-lg font-bold hover:bg-green-600 shadow transition"><i class="fas fa-check"></i></button>
+            </div>
+        `;
+        dom.pendingListContainer.appendChild(item);
+    });
 
     members.forEach(m => {
         const name = (typeof m === 'object') ? (m.username || m.email.split('@')[0]) : "User Lama";
         const email = (typeof m === 'object') ? m.email : "Hidden";
         const uid = (typeof m === 'object') ? m.uid : m;
-        const isLeader = (currentRoomData.createdBy === email);
         const isMe = (uid === currentUser.uid);
+        
+        const isTargetAdmin = currentRoomData.admins ? currentRoomData.admins.includes(uid) : (currentRoomData.createdBy === email);
+
+        let actionBtn = '';
+        if (iAmAdmin && !isTargetAdmin) {
+            actionBtn = `<button onclick="makeAdmin('${uid}')" class="text-[10px] border border-indigo-200 text-indigo-600 px-2 py-1 rounded font-bold hover:bg-indigo-50 ml-2 transition">Jadikan Admin</button>`;
+        }
 
         const item = document.createElement('div');
-        item.className = "flex justify-between items-center p-3 border-b last:border-0";
+        item.className = "flex justify-between items-center p-3 border-b border-gray-100 last:border-0 hover:bg-gray-50 transition";
         item.innerHTML = `
             <div class="flex items-center gap-3">
                 <div class="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-xs font-bold text-gray-600">${name[0].toUpperCase()}</div>
-                <div><p class="text-sm font-bold text-gray-800">${name} ${isMe ? '(Anda)' : ''}</p></div>
+                <div class="flex flex-col">
+                    <p class="text-sm font-bold text-gray-800 leading-tight">${name} ${isMe ? '<span class="text-[10px] font-normal text-gray-400">(Anda)</span>' : ''}</p>
+                    ${isTargetAdmin ? '<span class="text-[9px] text-indigo-600 font-bold mt-0.5">ADMIN</span>' : ''}
+                </div>
             </div>
-            ${isLeader ? '<span class="text-[10px] bg-indigo-100 text-indigo-600 px-2 py-1 rounded font-bold">Admin</span>' : ''}
+            <div>${actionBtn}</div>
         `;
-        list.appendChild(item);
+        dom.membersListContainer.appendChild(item);
     });
+}
+
+dom.togglePendingBtn.onclick = () => {
+    dom.pendingListContainer.classList.toggle('hidden');
+    dom.pendingIcon.classList.toggle('rotate-180');
+};
+
+dom.btnInviteUser.onclick = async () => {
+    const targetId = dom.inviteUserIdInput.value.trim().toUpperCase();
+    if(targetId.length !== 12) return showToast("User ID harus tepat 12 karakter!", "error");
+    if(targetId === currentCustomUserId) return showToast("Anda tidak bisa mengundang diri sendiri.", "error");
+
+    dom.btnInviteUser.disabled = true;
+    dom.btnInviteUser.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+
+    try {
+        const q = query(collection(db, "users"), where("userId", "==", targetId));
+        const snap = await getDocs(q);
+        
+        if(snap.empty) {
+            showToast("Pengguna dengan ID tersebut tidak ditemukan.", "error");
+            return;
+        }
+
+        const targetUserDoc = snap.docs[0];
+        const targetUid = targetUserDoc.id; 
+        const targetData = targetUserDoc.data();
+
+        if(currentRoomData.memberIds.includes(targetUid)) {
+            showToast("Pengguna ini sudah ada di dalam grup.", "error");
+            return;
+        }
+
+        const targetProfile = { uid: targetUid, email: targetData.email, username: targetData.displayName || "User" };
+        
+        await updateDoc(doc(db, "rooms", currentRoomId), {
+            members: arrayUnion(targetProfile),
+            memberIds: arrayUnion(targetUid)
+        });
+
+        showToast(`Berhasil mengundang ${targetProfile.username}!`, "success");
+        dom.inviteUserIdInput.value = '';
+
+    } catch(e) {
+        showToast("Terjadi kesalahan: " + e.message, "error");
+    } finally {
+        dom.btnInviteUser.disabled = false;
+        dom.btnInviteUser.innerHTML = 'Undang';
+    }
+};
+
+window.makeAdmin = async (targetUid) => {
+    try {
+        await updateDoc(doc(db, "rooms", currentRoomId), { admins: arrayUnion(targetUid) });
+        showToast("Anggota berhasil dijadikan Admin", "success");
+    } catch (e) { showToast(e.message, 'error'); }
+};
+
+window.acceptMember = async (targetUid) => {
+    const pendingArr = currentRoomData.pendingMembers || [];
+    const targetProfile = pendingArr.find(m => m.uid === targetUid);
+    if(!targetProfile) return;
+    
+    const newPending = pendingArr.filter(m => m.uid !== targetUid);
+    try {
+        await updateDoc(doc(db, "rooms", currentRoomId), {
+            pendingMembers: newPending,
+            members: arrayUnion(targetProfile),
+            memberIds: arrayUnion(targetUid)
+        });
+        showToast("Persetujuan diterima.", "success");
+    } catch(e) { showToast(e.message, "error"); }
+};
+
+window.rejectMember = async (targetUid) => {
+    const pendingArr = currentRoomData.pendingMembers || [];
+    const newPending = pendingArr.filter(m => m.uid !== targetUid);
+    try {
+        await updateDoc(doc(db, "rooms", currentRoomId), { pendingMembers: newPending });
+        showToast("Persetujuan ditolak.", "success");
+    } catch(e) { showToast(e.message, "error"); }
 };
 
 dom.leaveGroupBtn.onclick = () => {
@@ -904,6 +1323,7 @@ dom.leaveGroupBtn.onclick = () => {
 
             const newMembers = rData.members.filter(m => ((typeof m === 'object' ? m.uid : m) !== currentUser.uid));
             const newMemberIds = rData.memberIds.filter(id => id !== currentUser.uid);
+            let newAdmins = (rData.admins || [rData.createdBy || ""]).filter(id => id !== currentUser.uid);
 
             if (newMembers.length === 0) {
                 await deleteDoc(roomRef);
@@ -915,12 +1335,12 @@ dom.leaveGroupBtn.onclick = () => {
                 showToast("Grup dihapus karena kosong.", 'success');
             } else {
                 let newLeader = rData.createdBy;
-                if (rData.createdBy === currentUser.email) {
+                if (newAdmins.length === 0 && newMembers.length > 0) {
                     const nextUser = newMembers[0];
+                    newAdmins.push((typeof nextUser === 'object') ? nextUser.uid : nextUser);
                     newLeader = (typeof nextUser === 'object') ? nextUser.email : "Unknown";
-                    showToast(`Admin dialihkan ke: ${newLeader}`, 'success');
                 }
-                await updateDoc(roomRef, { members: newMembers, memberIds: newMemberIds, createdBy: newLeader });
+                await updateDoc(roomRef, { members: newMembers, memberIds: newMemberIds, admins: newAdmins, createdBy: newLeader });
                 showToast("Anda telah keluar.", 'success');
             }
             dom.emptyChatState.classList.remove('hidden');
