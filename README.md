@@ -1,3 +1,2 @@
-# manager
-free use
+#server manager
 Erwin Suryawan
