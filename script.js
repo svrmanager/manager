@@ -2,7 +2,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
 import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, onAuthStateChanged, signOut, updateProfile, sendPasswordResetEmail } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
 import { getFirestore, collection, addDoc, query, orderBy, where, onSnapshot, serverTimestamp, updateDoc, arrayUnion, getDocs, doc, getDoc, deleteDoc, writeBatch, setDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
-// --- CONFIG FIREBASE BARU ANDA ---
+// --- CONFIG FIREBASE ---
 const firebaseConfig = {
   apiKey: "AIzaSyDXWb4X1xGiURwwvpRWcMkeqEM5CZ8LUIw",
   authDomain: "servermanager-bd080.firebaseapp.com",
@@ -13,7 +13,7 @@ const firebaseConfig = {
   measurementId: "G-6YNX0BVY4M"
 };
 
-// --- CONFIG CLOUDINARY BARU ANDA ---
+// --- CONFIG CLOUDINARY ---
 const CLOUDINARY_CLOUD_NAME = "douvpolrv"; 
 const CLOUDINARY_PRESET = "svrmanager";   
 
@@ -28,6 +28,7 @@ let currentCustomUserId = "LOADING...";
 let currentRoomId = null;
 let currentRoomData = null;
 let unsubscribeMsg = null; 
+let unsubscribeRooms = null;
 let confirmCallback = null; 
 let pendingFiles = []; 
 let currentRoomMessages = []; 
@@ -36,7 +37,7 @@ let allRoomsData = [];
 
 let currentSessionPassword = "(Password terenkripsi, masuk via Auto-Login)";
 
-// --- DOM ELEMENTS ---
+// --- DOM ELEMENTS (MAIN) ---
 const dom = {
     authOverlay: document.getElementById('authOverlay'),
     appContainer: document.getElementById('appContainer'),
@@ -47,7 +48,6 @@ const dom = {
     chatInputArea: document.getElementById('chatInputArea'),
     emptyChatState: document.getElementById('emptyChatState'),
     
-    // Profiles
     userProfileBtn: document.getElementById('userProfileBtn'),
     userAvatarInput: document.getElementById('userAvatarInput'),
     sidebarUserAvatar: document.getElementById('sidebarUserAvatar'),
@@ -61,7 +61,6 @@ const dom = {
     headerRoomAvatar: document.getElementById('headerRoomAvatar'),
     headerRoomInitial: document.getElementById('headerRoomInitial'),
 
-    // Sidebar
     roomsContainer: document.getElementById('roomsContainer'),
     toggleArchiveBtn: document.getElementById('toggleArchiveBtn'),
     archivedRoomsContainer: document.getElementById('archivedRoomsContainer'),
@@ -70,7 +69,6 @@ const dom = {
     msgInput: document.getElementById('msgInput'),
     sendBtn: document.getElementById('sendBtn'),
     
-    // Auth
     loginBox: document.getElementById('loginBox'),
     forgotBox: document.getElementById('forgotBox'),
     showForgotBtn: document.getElementById('showForgotBtn'),
@@ -78,30 +76,25 @@ const dom = {
     sendResetBtn: document.getElementById('sendResetBtn'),
     forgotEmailInput: document.getElementById('forgotEmailInput'),
 
-    // Search
     searchMenuBtn: document.getElementById('searchMenuBtn'),
     searchContainer: document.getElementById('searchContainer'),
     searchInput: document.getElementById('searchInput'),
     closeSearchBtn: document.getElementById('closeSearchBtn'),
 
-    // Attach
     multiAttachBtn: document.getElementById('multiAttachBtn'),
     multiFileInput: document.getElementById('multiFileInput'),
     multiPreviewContainer: document.getElementById('multiPreviewContainer'),
     multiPreviewList: document.getElementById('multiPreviewList'),
 
-    // Menus
     groupMenuBtn: document.getElementById('groupMenuBtn'),
     groupMenuDropdown: document.getElementById('groupMenuDropdown'),
     leaveGroupBtn: document.getElementById('leaveGroupBtn'),
     viewMembersBtn: document.getElementById('viewMembersBtn'),
     renameRoomBtn: document.getElementById('renameRoomBtn'), 
     accessSettingsBtn: document.getElementById('accessSettingsBtn'),
-    
     toggleNotifBtn: document.getElementById('toggleNotifBtn'),
     archiveRoomBtn: document.getElementById('archiveRoomBtn'),
 
-    // Modals
     logoutBtn: document.getElementById('logoutBtn'),
     toastContainer: document.getElementById('toastContainer'),
     confirmModal: document.getElementById('confirmModal'),
@@ -114,7 +107,7 @@ const dom = {
     btnDlJpg: document.getElementById('btnDlJpg'),
     btnDlPng: document.getElementById('btnDlPng'),
 
-    // Logout Modal
+    // Modals
     logoutModal: document.getElementById('logoutModal'),
     logoutTitle: document.getElementById('logoutTitle'),
     logoutEmailDisplay: document.getElementById('logoutEmailDisplay'),
@@ -128,15 +121,11 @@ const dom = {
     btnSaveUsername: document.getElementById('btnSaveUsername'),
     logoutUserIdDisplay: document.getElementById('logoutUserIdDisplay'),
     btnCopyUserId: document.getElementById('btnCopyUserId'),
-
-    // Access Settings Modal
     modalAccess: document.getElementById('modalAccess'),
     btnCloseAccess: document.getElementById('btnCloseAccess'),
     accessCodeDisplay: document.getElementById('accessCodeDisplay'),
     btnCopyAccessCode: document.getElementById('btnCopyAccessCode'),
     togglePrivate: document.getElementById('togglePrivate'),
-
-    // Members Modal
     modalMembers: document.getElementById('modalMembers'),
     btnCloseMembers: document.getElementById('btnCloseMembers'),
     inviteContainer: document.getElementById('inviteContainer'),
@@ -151,7 +140,30 @@ const dom = {
     memberCount: document.getElementById('memberCount'),
 };
 
-// --- NAVIGATION & HARDWARE BACK BUTTON (HISTORY API) ---
+// --- DOM ELEMENTS (DEVELOPER) ---
+const devDom = {
+    trigger: document.getElementById('devModeTrigger'),
+    authModal: document.getElementById('devAuthModal'),
+    authInput: document.getElementById('devAuthInput'),
+    btnCancel: document.getElementById('btnCancelDev'),
+    btnEnter: document.getElementById('btnEnterDev'),
+    dashboard: document.getElementById('devDashboard'),
+    btnExit: document.getElementById('btnExitDev'),
+    clock: document.getElementById('devClock'),
+    
+    totalUsers: document.getElementById('devTotalUsers'),
+    totalGroups: document.getElementById('devTotalGroups'),
+    totalMsgs: document.getElementById('devTotalMsgs'),
+    totalMedia: document.getElementById('devTotalMedia'),
+    
+    usersList: document.getElementById('devUsersList'),
+    groupsList: document.getElementById('devGroupsList'),
+    logsList: document.getElementById('devLogsList'),
+    trafficChart: document.getElementById('devTrafficChart'),
+    trafficLoading: document.getElementById('devTrafficLoading')
+};
+
+// --- NAVIGATION API ---
 window.addEventListener('popstate', (e) => {
     if (window.innerWidth < 768 && !dom.chatPanel.classList.contains('translate-x-full')) {
         dom.roomListPanel.classList.remove('-translate-x-full');
@@ -189,6 +201,30 @@ function checkIsAdmin() {
     return currentRoomData.admins ? currentRoomData.admins.includes(currentUser.uid) : (currentRoomData.createdBy === currentUser.email);
 }
 
+// --- ACTIVITY LOGGING (NEW) ---
+async function logActivity(type, detail) {
+    if(!currentUser) return;
+    try {
+        await addDoc(collection(db, "activity_logs"), {
+            type: type, // 'upload', 'download', 'message'
+            userEmail: currentUser.email,
+            userName: currentUser.displayName || "User",
+            detail: detail,
+            timestamp: serverTimestamp()
+        });
+    } catch(e) { console.error("Failed to log activity:", e); }
+}
+
+// Update Last Active status
+async function updateUserActivity() {
+    if(currentUser) {
+        try {
+            await updateDoc(doc(db, "users", currentUser.uid), { lastActive: serverTimestamp() });
+        } catch(e) { /* silent fail */ }
+    }
+}
+setInterval(updateUserActivity, 5 * 60 * 1000); // Update every 5 mins
+
 // --- UPLOAD HELPER ---
 async function uploadToCloudinary(file) {
     const formData = new FormData();
@@ -203,7 +239,7 @@ async function uploadToCloudinary(file) {
     return { url: data.secure_url, type: resourceType };
 }
 
-// --- LOGOUT / ACCOUNT INFO FLOW ---
+// --- LOGOUT / ACCOUNT INFO ---
 dom.logoutBtn.onclick = () => {
     dom.logoutModal.classList.remove('hidden');
     dom.logoutTitle.innerText = "Informasi Akun";
@@ -282,7 +318,6 @@ dom.btnConfirmLogout.onclick = () => {
     signOut(auth);
 };
 
-// --- PROFILE PICTURES LOGIC ---
 function updateSidebarProfile() {
     const dName = currentUser.displayName || currentUser.email.split('@')[0];
     dom.sidebarTitle.innerText = dName; 
@@ -401,6 +436,7 @@ document.getElementById('closeImageViewer').onclick = () => {
 
 window.downloadFile = async (url, filename) => {
     showToast(`Mengunduh ${filename}...`, "success");
+    logActivity("download", filename); // DEV LOGGING
     try {
         const response = await fetch(url);
         const blob = await response.blob();
@@ -427,9 +463,6 @@ window.downloadFile = async (url, filename) => {
 // --- ATTACHMENT ---
 dom.multiAttachBtn.onclick = () => dom.multiFileInput.click();
 
-// --- ATTACHMENT ---
-dom.multiAttachBtn.onclick = () => dom.multiFileInput.click();
-
 function handleFileSelection(e) {
     const files = Array.from(e.target.files);
     const validFiles = files.filter(file => {
@@ -446,7 +479,6 @@ function handleFileSelection(e) {
     }
     e.target.value = ''; 
 }
-dom.multiFileInput.onchange = handleFileSelection;
 dom.multiFileInput.onchange = handleFileSelection;
 
 window.removePendingFile = (index) => {
@@ -518,6 +550,7 @@ onAuthStateChanged(auth, async (user) => {
         
         updateSidebarProfile();
         loadRooms(); 
+        updateUserActivity(); // Set online
 
         try {
             const userRef = doc(db, "users", user.uid);
@@ -526,17 +559,39 @@ onAuthStateChanged(auth, async (user) => {
 
             if (userSnap.exists()) {
                 currentCustomUserId = userSnap.data().userId;
-                await updateDoc(userRef, { email: user.email, displayName: dName });
+                await updateDoc(userRef, { email: user.email, displayName: dName, lastActive: serverTimestamp() });
             } else {
                 const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'; 
                 let newId = ''; 
                 for(let i=0; i<12; i++) newId += chars.charAt(Math.floor(Math.random() * chars.length));
                 currentCustomUserId = newId;
-                await setDoc(userRef, { userId: currentCustomUserId, email: user.email, displayName: dName });
+                await setDoc(userRef, { userId: currentCustomUserId, email: user.email, displayName: dName, lastActive: serverTimestamp() });
             }
         } catch (e) { console.error("Error setting user ID:", e); }
 
     } else {
+        if (unsubscribeRooms) { unsubscribeRooms(); unsubscribeRooms = null; }
+        if (unsubscribeMsg) { unsubscribeMsg(); unsubscribeMsg = null; }
+        
+        currentUser = null;
+        currentCustomUserId = "LOADING...";
+        currentRoomId = null;
+        currentRoomData = null;
+        currentRoomMessages = [];
+        allRoomsData = [];
+        searchQuery = "";
+        pendingFiles = [];
+
+        dom.roomsContainer.innerHTML = '';
+        dom.archivedRoomsContainer.innerHTML = '';
+        dom.chatBox.innerHTML = '';
+        
+        dom.emptyChatState.classList.remove('hidden');
+        dom.chatHeader.classList.add('hidden');
+        dom.chatBox.classList.add('hidden');
+        dom.chatInputArea.classList.add('hidden');
+        dom.groupMenuDropdown.classList.add('hidden');
+        
         dom.authOverlay.classList.remove('hidden');
         dom.appContainer.classList.add('hidden');
         dom.forgotBox.classList.add('hidden');
@@ -709,8 +764,10 @@ function renderRoomsList() {
 }
 
 function loadRooms() {
+    if (unsubscribeRooms) unsubscribeRooms(); 
+    
     const q = query(collection(db, "rooms"), where("memberIds", "array-contains", currentUser.uid));
-    onSnapshot(q, (snap) => {
+    unsubscribeRooms = onSnapshot(q, (snap) => {
         allRoomsData = [];
         snap.forEach(doc => {
             const data = doc.data();
@@ -790,9 +847,7 @@ function openChatRoom(roomId, roomData) {
     loadMessages(roomId);
 }
 
-document.getElementById('backToDashboard').onclick = () => {
-    history.back(); 
-};
+document.getElementById('backToDashboard').onclick = () => history.back(); 
 
 // --- MENU TITIK 3 ---
 function updateDropdownMenuText() {
@@ -829,7 +884,6 @@ document.getElementById('confirmRenameRoom').onclick = async () => {
     } catch (e) { showToast(e.message, 'error'); }
 };
 
-// AKSES & KODE GRUP (Admin)
 dom.accessSettingsBtn.onclick = () => {
     dom.groupMenuDropdown.classList.add('hidden');
     dom.accessCodeDisplay.value = currentRoomData.code;
@@ -849,7 +903,7 @@ dom.togglePrivate.onchange = async (e) => {
         showToast(`Grup diubah menjadi ${isPrivat ? 'Privat' : 'Publik'}`, "success");
     } catch (err) {
         showToast(err.message, "error");
-        e.target.checked = !isPrivat; // revert
+        e.target.checked = !isPrivat; 
     }
 };
 
@@ -908,7 +962,6 @@ function checkAndShowNotification(roomId, msgData) {
 function loadMessages(roomId) {
     if (unsubscribeMsg) unsubscribeMsg();
     
-    // MENGHAPUS orderBy() agar tidak membutuhkan index komposit (Solusi Loading Lama di Database Baru)
     const q = query(collection(db, "messages"), where("roomId", "==", roomId));
     let isFirstLoad = true; 
     
@@ -927,7 +980,6 @@ function loadMessages(roomId) {
             currentRoomMessages.push(msgData);
         });
 
-        // Pengurutan waktu lokal JS (Menghindari error index Firebase)
         currentRoomMessages.sort((a, b) => {
             const timeA = (a.timestamp && typeof a.timestamp.toMillis === 'function') ? a.timestamp.toMillis() : Date.now();
             const timeB = (b.timestamp && typeof b.timestamp.toMillis === 'function') ? b.timestamp.toMillis() : Date.now();
@@ -1090,7 +1142,6 @@ function renderMessage(msg) {
     dom.chatBox.appendChild(div);
 }
 
-// --- TEXTAREA AUTO EXPAND ---
 dom.msgInput.addEventListener('input', function() {
     this.style.height = 'auto';
     this.style.height = (this.scrollHeight) + 'px'; 
@@ -1103,7 +1154,6 @@ dom.msgInput.addEventListener('keydown', function(e) {
     }
 });
 
-// --- SEND MESSAGE ---
 dom.sendBtn.onclick = async () => {
     if (!currentRoomId) return;
     const text = dom.msgInput.value.trim();
@@ -1114,9 +1164,13 @@ dom.sendBtn.onclick = async () => {
     let finalAttachments = [];
 
     try {
+        updateUserActivity(); 
         if (pendingFiles.length > 0) {
             const uploadPromises = pendingFiles.map(file => uploadToCloudinary(file).then(data => ({ fileUrl: data.url, fileName: file.name, type: data.type })));
             finalAttachments = await Promise.all(uploadPromises);
+            logActivity("upload", `${finalAttachments.length} file terlampir`); // DEV LOG
+        } else {
+            logActivity("message", "Mengirim pesan teks"); // DEV LOG
         }
 
         await addDoc(collection(db, "messages"), {
@@ -1349,4 +1403,215 @@ dom.leaveGroupBtn.onclick = () => {
             dom.chatInputArea.classList.add('hidden');
         } catch (e) { showToast(e.message, 'error'); }
     });
+};
+
+// ==========================================
+// --- DEVELOPER MODE / ANTI ABUSE SYSTEM ---
+// ==========================================
+
+function getDevCurrentPassword() {
+    const now = new Date();
+    const d = String(now.getDate()).padStart(2, '0');
+    const m = String(now.getMonth() + 1).padStart(2, '0');
+    const y = now.getFullYear();
+    const hr = String(now.getHours()).padStart(2, '0');
+    const min = String(now.getMinutes()).padStart(2, '0');
+    return `ES${d}${m}${y}${hr}${min}`;
+}
+
+function getDevFallbackPassword() {
+    // 1 Menit Toleransi mundur jika jam barusan berganti
+    const now = new Date(Date.now() - 60000); 
+    const d = String(now.getDate()).padStart(2, '0');
+    const m = String(now.getMonth() + 1).padStart(2, '0');
+    const y = now.getFullYear();
+    const hr = String(now.getHours()).padStart(2, '0');
+    const min = String(now.getMinutes()).padStart(2, '0');
+    return `ES${d}${m}${y}${hr}${min}`;
+}
+
+setInterval(() => {
+    const now = new Date();
+    devDom.clock.innerText = now.toLocaleString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}, 1000);
+
+devDom.trigger.onclick = () => {
+    devDom.authModal.classList.remove('hidden');
+    devDom.authInput.value = '';
+    devDom.authInput.focus();
+};
+
+devDom.btnCancel.onclick = () => {
+    devDom.authModal.classList.add('hidden');
+};
+
+devDom.btnEnter.onclick = () => {
+    const pwd = devDom.authInput.value.trim();
+    if(pwd === getDevCurrentPassword() || pwd === getDevFallbackPassword()) {
+        devDom.authModal.classList.add('hidden');
+        devDom.dashboard.classList.remove('hidden');
+        loadDevDashboard();
+        showToast("DEV SYSTEM GRANTED", "success");
+    } else {
+        showToast("ACCESS DENIED", "error");
+        devDom.authInput.value = '';
+    }
+};
+
+devDom.btnExit.onclick = () => {
+    devDom.dashboard.classList.add('hidden');
+    showToast("EXITING DEV SYSTEM", "success");
+};
+
+async function loadDevDashboard() {
+    devDom.usersList.innerHTML = '<p class="text-xs text-gray-500 text-center mt-4">Memuat data pengguna...</p>';
+    devDom.groupsList.innerHTML = '<p class="text-xs text-gray-500 text-center mt-4">Memuat data grup...</p>';
+    
+    try {
+        // 1. Fetch Users
+        const usersSnap = await getDocs(collection(db, "users"));
+        let usersHTML = '';
+        let onlineCount = 0;
+        
+        usersSnap.forEach(docSnap => {
+            const u = docSnap.data();
+            const uId = docSnap.id;
+            let isOnline = false;
+            let timeStr = "Tidak Pernah";
+            
+            if(u.lastActive && typeof u.lastActive.toDate === 'function') {
+                const last = u.lastActive.toDate();
+                const diffMins = (Date.now() - last.getTime()) / 60000;
+                if(diffMins <= 5) { isOnline = true; onlineCount++; }
+                timeStr = last.toLocaleString('id-ID');
+            }
+
+            usersHTML += `
+                <div class="p-3 bg-[#1a1a1a] rounded border border-gray-800 flex justify-between items-center hover:border-orange-500/30 transition">
+                    <div>
+                        <p class="text-sm font-bold text-gray-200">${u.displayName || 'Unknown'} <span class="text-[10px] text-gray-500 ml-1 font-mono">${u.userId}</span></p>
+                        <p class="text-[10px] text-gray-400">${u.email}</p>
+                        <p class="text-[10px] mt-1 ${isOnline ? 'text-green-400' : 'text-gray-500'} font-bold">
+                            <i class="fas fa-circle text-[8px] mr-1"></i> ${isOnline ? 'Aktif Sekarang' : 'Terakhir: ' + timeStr}
+                        </p>
+                    </div>
+                    <button onclick="forceDeleteUser('${uId}', '${u.email}')" class="text-red-500 bg-red-500/10 hover:bg-red-500/30 px-3 py-1.5 rounded text-xs font-bold transition">HAPUS</button>
+                </div>
+            `;
+        });
+        devDom.usersList.innerHTML = usersHTML;
+        devDom.totalUsers.innerText = usersSnap.size;
+
+        // 2. Fetch Groups
+        const groupsSnap = await getDocs(collection(db, "rooms"));
+        let groupsHTML = '';
+        groupsSnap.forEach(docSnap => {
+            const g = docSnap.data();
+            const gId = docSnap.id;
+            groupsHTML += `
+                <div class="p-3 bg-[#1a1a1a] rounded border border-gray-800 flex justify-between items-center hover:border-orange-500/30 transition">
+                    <div class="overflow-hidden pr-2">
+                        <p class="text-sm font-bold text-gray-200 truncate">${g.name}</p>
+                        <p class="text-[10px] text-gray-400">Kode: <span class="font-mono text-orange-400">${g.code}</span> | Anggota: ${g.members ? g.members.length : 0}</p>
+                        <p class="text-[10px] text-gray-500 mt-1">Dibuat oleh: ${g.createdBy}</p>
+                    </div>
+                    <button onclick="forceDeleteGroup('${gId}', '${g.name.replace(/'/g, "\\'")}')" class="flex-shrink-0 text-red-500 bg-red-500/10 hover:bg-red-500/30 px-3 py-1.5 rounded text-xs font-bold transition">Bongkar</button>
+                </div>
+            `;
+        });
+        devDom.groupsList.innerHTML = groupsHTML;
+        devDom.totalGroups.innerText = groupsSnap.size;
+
+        // 3. Activity Logs (Realtime)
+        const logsQ = query(collection(db, "activity_logs"), orderBy("timestamp", "desc"));
+        onSnapshot(logsQ, (snap) => {
+            let logsHTML = '';
+            snap.forEach(docSnap => {
+                const l = docSnap.data();
+                const timeStr = l.timestamp ? l.timestamp.toDate().toLocaleTimeString('id-ID') : '...';
+                let color = "text-gray-400";
+                let icon = "fa-info-circle";
+                
+                if(l.type === 'upload') { color = "text-blue-400"; icon = "fa-cloud-upload-alt"; }
+                else if(l.type === 'download') { color = "text-green-400"; icon = "fa-cloud-download-alt"; }
+                else if(l.type === 'message') { color = "text-gray-300"; icon = "fa-comment"; }
+                
+                logsHTML += `
+                    <div class="p-2 border-b border-gray-800/50 hover:bg-[#1a1a1a] transition">
+                        <span class="text-[10px] text-gray-500 w-16 inline-block">[${timeStr}]</span>
+                        <span class="${color} font-bold w-16 inline-block"><i class="fas ${icon}"></i> ${l.type.toUpperCase()}</span>
+                        <span class="text-orange-400 font-bold mx-2">${l.userName}</span>
+                        <span class="text-gray-400 truncate">${l.detail}</span>
+                    </div>
+                `;
+            });
+            devDom.logsList.innerHTML = logsHTML || '<p class="text-gray-600 text-center">Belum ada aktivitas.</p>';
+        });
+
+        // 4. Traffic & Media Stats (dari Messages)
+        const msgsSnap = await getDocs(collection(db, "messages"));
+        devDom.totalMsgs.innerText = msgsSnap.size;
+        
+        let mediaCount = 0;
+        let hourlyTraffic = new Array(24).fill(0);
+        const todayStr = new Date().toDateString();
+
+        msgsSnap.forEach(docSnap => {
+            const m = docSnap.data();
+            if(m.attachments && m.attachments.length > 0) mediaCount += m.attachments.length;
+            
+            if(m.timestamp && typeof m.timestamp.toDate === 'function') {
+                const mDate = m.timestamp.toDate();
+                if(mDate.toDateString() === todayStr) {
+                    hourlyTraffic[mDate.getHours()]++;
+                }
+            }
+        });
+        devDom.totalMedia.innerText = mediaCount;
+
+        // Build Traffic Chart
+        const maxTraffic = Math.max(...hourlyTraffic, 1);
+        let chartHTML = '';
+        for(let i=0; i<24; i++) {
+            const heightPct = (hourlyTraffic[i] / maxTraffic) * 100;
+            const hourLabel = String(i).padStart(2, '0');
+            chartHTML += `
+                <div class="flex flex-col items-center flex-1 group">
+                    <div class="text-[8px] text-gray-500 mb-1 opacity-0 group-hover:opacity-100 transition">${hourlyTraffic[i]}</div>
+                    <div class="w-full bg-orange-500/20 group-hover:bg-orange-500 rounded-t-sm transition-all" style="height: ${heightPct}%"></div>
+                    <div class="text-[8px] text-gray-600 mt-2 font-mono">${hourLabel}</div>
+                </div>
+            `;
+        }
+        devDom.trafficLoading.style.display = 'none';
+        devDom.trafficChart.innerHTML = chartHTML;
+
+    } catch(e) {
+        console.error(e);
+        showToast("Dev Dash Error: " + e.message, "error");
+    }
+}
+
+// Dev Mode Actions
+window.forceDeleteUser = async (uid, email) => {
+    if(!confirm(`PERINGATAN: Hapus permanen pengguna ${email}?`)) return;
+    try {
+        await deleteDoc(doc(db, "users", uid));
+        showToast("Pengguna dihapus dari database", "success");
+        loadDevDashboard();
+    } catch(e) { showToast(e.message, "error"); }
+};
+
+window.forceDeleteGroup = async (gid, name) => {
+    if(!confirm(`PERINGATAN: Hapus paksa grup "${name}" dan semua isinya?`)) return;
+    try {
+        await deleteDoc(doc(db, "rooms", gid));
+        const chatQ = query(collection(db, "messages"), where("roomId", "==", gid));
+        const chatSnap = await getDocs(chatQ);
+        const batch = writeBatch(db);
+        chatSnap.forEach(d => batch.delete(d.ref));
+        await batch.commit();
+        showToast("Grup & isi obrolan dibongkar", "success");
+        loadDevDashboard();
+    } catch(e) { showToast(e.message, "error"); }
 };
