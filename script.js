@@ -69,6 +69,9 @@ const dom = {
     msgInput: document.getElementById('msgInput'),
     sendBtn: document.getElementById('sendBtn'),
     
+    scrollToBottomBtn: document.getElementById('scrollToBottomBtn'),
+    unreadBadge: document.getElementById('unreadBadge'),
+    
     loginBox: document.getElementById('loginBox'),
     forgotBox: document.getElementById('forgotBox'),
     showForgotBtn: document.getElementById('showForgotBtn'),
@@ -106,6 +109,13 @@ const dom = {
     dlBtnText: document.getElementById('dlBtnText'),
     btnDlJpg: document.getElementById('btnDlJpg'),
     btnDlPng: document.getElementById('btnDlPng'),
+
+    // Caption Elements
+    openCaptionBtn: document.getElementById('openCaptionBtn'),
+    captionContainer: document.getElementById('captionContainer'),
+    closeCaptionBtn: document.getElementById('closeCaptionBtn'),
+    captionInput: document.getElementById('captionInput'),
+    saveCaptionBtn: document.getElementById('saveCaptionBtn'),
 
     // Modals
     logoutModal: document.getElementById('logoutModal'),
@@ -381,16 +391,115 @@ dom.roomAvatarInput.onchange = async (e) => {
     }
 };
 
-// --- VIEWER ---
-window.viewImage = (url, type, originalName = 'download') => {
+// --- SCROLL TO BOTTOM LOGIC ---
+let unreadCount = 0;
+
+dom.chatBox.addEventListener('scroll', () => {
+    const { scrollTop, scrollHeight, clientHeight } = dom.chatBox;
+    if (scrollHeight - scrollTop - clientHeight > 200) {
+        dom.scrollToBottomBtn.classList.remove('hidden', 'translate-y-10', 'opacity-0');
+    } else {
+        dom.scrollToBottomBtn.classList.add('translate-y-10', 'opacity-0');
+        unreadCount = 0;
+        dom.unreadBadge.classList.add('hidden');
+        setTimeout(() => {
+            if(dom.scrollToBottomBtn.classList.contains('opacity-0')) {
+                dom.scrollToBottomBtn.classList.add('hidden');
+            }
+        }, 300);
+    }
+});
+
+dom.scrollToBottomBtn.onclick = () => {
+    dom.chatBox.scrollTo({ top: dom.chatBox.scrollHeight, behavior: 'smooth' });
+    unreadCount = 0;
+    dom.unreadBadge.classList.add('hidden');
+};
+
+
+// --- VIEWER, PAN & CAPTION LOGIC ---
+let zoomLevel = 1;
+let isDragging = false;
+let startX, startY;
+let translateX = 0, translateY = 0;
+
+function updateImageTransform() {
+    dom.viewerImage.style.transform = `translate(${translateX}px, ${translateY}px) scale(${zoomLevel})`;
+    if (zoomLevel > 1) {
+        dom.viewerImage.style.cursor = isDragging ? 'grabbing' : 'grab';
+    } else {
+        dom.viewerImage.style.cursor = 'default';
+    }
+}
+
+// Fitur Zoom dengan Scroll
+dom.viewerImage.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    if(e.deltaY < 0) {
+        zoomLevel = Math.min(zoomLevel + 0.2, 5); // Maksimal Zoom 5x
+    } else {
+        zoomLevel = Math.max(zoomLevel - 0.2, 1); // Minimal Zoom 1x
+        if (zoomLevel === 1) {
+            translateX = 0; // Kembalikan ke tengah jika zoom di-reset
+            translateY = 0;
+        }
+    }
+    updateImageTransform();
+});
+
+// Fitur Geser Gambar (Drag & Pan) HANYA saat diklik dan ditahan
+dom.viewerImage.addEventListener('mousedown', (e) => {
+    e.preventDefault(); // FIX: Mencegah efek drag bawaan browser
+    if (zoomLevel > 1) {
+        isDragging = true;
+        startX = e.clientX - translateX;
+        startY = e.clientY - translateY;
+        updateImageTransform();
+    }
+});
+
+window.addEventListener('mousemove', (e) => {
+    if (!isDragging) return;
+    e.preventDefault();
+    translateX = e.clientX - startX;
+    translateY = e.clientY - startY;
+    updateImageTransform();
+});
+
+window.addEventListener('mouseup', () => {
+    if (isDragging) {
+        isDragging = false;
+        updateImageTransform();
+    }
+});
+
+window.addEventListener('mouseleave', () => {
+    if (isDragging) {
+        isDragging = false;
+        updateImageTransform();
+    }
+});
+
+window.viewImage = (url, type, originalName = 'download', msgId = null, currentCaption = '') => {
     dom.imageViewer.classList.remove('hidden');
     dom.downloadOptions.classList.add('hidden'); 
+    
+    // Reset Zoom dan Posisi
+    zoomLevel = 1;
+    translateX = 0;
+    translateY = 0;
+    updateImageTransform();
+    
+    // Reset Panel Keterangan State
+    dom.captionContainer.classList.add('hidden');
+    dom.captionInput.value = currentCaption || ''; // Tampilkan keterangan jika sudah ada
     
     let baseName = originalName;
     if(baseName.includes('.')) baseName = baseName.substring(0, baseName.lastIndexOf('.'));
 
     if (type === 'video') {
         dom.viewerImage.classList.add('hidden');
+        dom.openCaptionBtn.classList.add('hidden'); // Matikan Keterangan untuk Video
         dom.viewerVideo.classList.remove('hidden');
         dom.viewerVideo.src = url;
         dom.dlBtnText.innerText = "Download Video";
@@ -401,8 +510,13 @@ window.viewImage = (url, type, originalName = 'download') => {
     } else {
         dom.viewerVideo.classList.add('hidden');
         dom.viewerImage.classList.remove('hidden');
+        dom.openCaptionBtn.classList.remove('hidden'); // Aktifkan Keterangan untuk Gambar
         dom.viewerImage.src = url;
         dom.dlBtnText.innerText = "Download Options";
+        
+        // Simpan URL gambar dan ID Pesan untuk Keterangan
+        dom.openCaptionBtn.dataset.imageUrl = url;
+        dom.openCaptionBtn.dataset.msgId = msgId;
 
         dom.viewerMainDownloadBtn.onclick = (e) => {
             e.stopPropagation();
@@ -433,6 +547,66 @@ document.getElementById('closeImageViewer').onclick = () => {
     dom.viewerVideo.pause(); 
     dom.viewerVideo.src = "";
 };
+
+// Event Listeners UI Keterangan (Caption)
+dom.openCaptionBtn.onclick = () => dom.captionContainer.classList.remove('hidden');
+dom.closeCaptionBtn.onclick = () => dom.captionContainer.classList.add('hidden');
+
+// Modifikasi Logika Simpan agar muncul konfirmasi terlebih dahulu
+dom.saveCaptionBtn.onclick = () => {
+    const newCaption = dom.captionInput.value.trim();
+    
+    showCustomConfirm("Simpan Keterangan", "Apakah Anda yakin ingin menyimpan keterangan ini untuk gambar?", async () => {
+        const msgId = dom.openCaptionBtn.dataset.msgId;
+        const imageUrl = dom.openCaptionBtn.dataset.imageUrl;
+
+        if (!msgId) return showToast("Tidak dapat menemukan ID pesan", "error");
+
+        dom.saveCaptionBtn.disabled = true;
+        dom.saveCaptionBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Menyimpan...';
+
+        try {
+            const msgRef = doc(db, "messages", msgId);
+            const msgSnap = await getDoc(msgRef);
+            
+            if (msgSnap.exists()) {
+                const data = msgSnap.data();
+                let updatedAttachments = data.attachments || [];
+                let updated = false;
+
+                // Update array attachment yang sesuai dengan URL gambarnya
+                updatedAttachments = updatedAttachments.map(att => {
+                    if (att.fileUrl === imageUrl) {
+                        att.caption = newCaption;
+                        updated = true;
+                    }
+                    return att;
+                });
+
+                // Fallback untuk sistem lama dimana URL file hanya di root object
+                if (!updated && data.fileUrl === imageUrl) {
+                    updatedAttachments.push({
+                        fileUrl: data.fileUrl,
+                        fileName: data.fileName,
+                        type: data.type,
+                        caption: newCaption
+                    });
+                }
+
+                // Simpan perubahan ke Firestore
+                await updateDoc(msgRef, { attachments: updatedAttachments });
+                showToast("Keterangan berhasil disimpan!", "success");
+                dom.captionContainer.classList.add('hidden');
+            }
+        } catch (error) {
+            showToast("Gagal menyimpan: " + error.message, "error");
+        } finally {
+            dom.saveCaptionBtn.disabled = false;
+            dom.saveCaptionBtn.innerHTML = '<i class="fas fa-save"></i> Simpan Keterangan';
+        }
+    });
+};
+
 
 window.downloadFile = async (url, filename) => {
     showToast(`Mengunduh ${filename}...`, "success");
@@ -986,15 +1160,16 @@ function loadMessages(roomId) {
             return timeA - timeB;
         });
 
+        const wasFirstLoad = isFirstLoad;
         isFirstLoad = false;
-        renderAllMessages(); 
+        renderAllMessages(wasFirstLoad); 
     }, (error) => {
         console.error("Error load messages:", error);
         dom.chatBox.innerHTML = `<div class="p-6 text-center text-red-500 font-bold mt-10 bg-red-50 rounded-2xl mx-4 shadow-sm border border-red-100">Gagal Mengambil Obrolan: <br><span class="text-xs font-normal text-red-400 mt-2 block">${error.message}</span></div>`;
     });
 }
 
-function renderAllMessages() {
+function renderAllMessages(forceScrollToBottom = false) {
     dom.chatBox.innerHTML = '';
     let lastDateString = null; 
 
@@ -1009,8 +1184,13 @@ function renderAllMessages() {
         if (isSearchingFile && (msg.type === 'raw' || (msg.attachments && msg.attachments.some(a => a.type === 'raw')))) return true;
         if (msg.text && msg.text.toLowerCase().includes(searchQuery)) return true;
         if (msg.fileName && msg.fileName.toLowerCase().includes(searchQuery)) return true;
+        
+        // Logika agar mencari ke dalam Keterangan Tersembunyi (Caption)
         if (msg.attachments && msg.attachments.length > 0) {
-            return msg.attachments.some(att => att.fileName && att.fileName.toLowerCase().includes(searchQuery));
+            return msg.attachments.some(att => 
+                (att.fileName && att.fileName.toLowerCase().includes(searchQuery)) || 
+                (att.caption && att.caption.toLowerCase().includes(searchQuery))
+            );
         }
         return false; 
     });
@@ -1037,8 +1217,24 @@ function renderAllMessages() {
         renderMessage(msgData);
     });
     
+    // Logika Auto-scroll yang disesuaikan
     if (!searchQuery) {
-        dom.chatBox.scrollTop = dom.chatBox.scrollHeight;
+        if (forceScrollToBottom) {
+            // Paksa scroll ke paling bawah pada load awal
+            setTimeout(() => {
+                dom.chatBox.scrollTop = dom.chatBox.scrollHeight;
+            }, 100); 
+        } else {
+            const isScrolledUp = dom.chatBox.scrollHeight - dom.chatBox.scrollTop - dom.chatBox.clientHeight > 200;
+            
+            if (!isScrolledUp) {
+                dom.chatBox.scrollTop = dom.chatBox.scrollHeight;
+            } else {
+                unreadCount++;
+                dom.unreadBadge.innerText = unreadCount;
+                dom.unreadBadge.classList.remove('hidden');
+            }
+        }
     }
 }
 
@@ -1082,17 +1278,25 @@ function renderMessage(msg) {
             mediaContent += `<div class="flex flex-wrap gap-2 mt-2 mb-2">`;
             attachmentsToRender.forEach(att => {
                 const safeName = (att.fileName || 'file_terlampir').replace(/'/g, "\\'");
+                
+                // Menyiapkan teks keterangan agar aman dimasukkan ke fungsi onclick html
+                let safeCaption = "";
+                if (att.caption) {
+                    safeCaption = att.caption.replace(/'/g, "\\'").replace(/"/g, '&quot;').replace(/\n/g, '\\n');
+                }
+
                 if(att.type === 'image') {
+                    // HANYA GAMBAR, KETERANGAN DIHILANGKAN DARI TAMPILAN CHAT
                     mediaContent += `
-                        <div class="relative inline-block z-10">
-                            <img src="${att.fileUrl}" class="rounded-lg h-28 w-auto object-cover border bg-black/10 cursor-pointer hover:opacity-90 transition" 
-                            onclick="viewImage('${att.fileUrl}', 'image', '${safeName}')">
+                        <div class="relative flex flex-col items-start z-10 w-full max-w-[250px] mb-1 group">
+                            <img src="${att.fileUrl}" class="rounded-lg max-h-40 w-auto object-cover border bg-black/10 cursor-pointer hover:opacity-90 transition" 
+                            onclick="viewImage('${att.fileUrl}', 'image', '${safeName}', '${msg.id}', '${safeCaption}')">
                         </div>`;
                 } else if (att.type === 'video') {
                     mediaContent += `
-                        <div class="relative inline-block h-28 w-auto z-10">
-                            <video src="${att.fileUrl}" class="rounded-lg h-full object-cover border bg-black/10 cursor-pointer" onclick="viewImage('${att.fileUrl}', 'video', '${safeName}')"></video>
-                            <button onclick="viewImage('${att.fileUrl}', 'video', '${safeName}')" class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-black/50 hover:bg-indigo-600 transition text-white w-10 h-10 rounded-full flex items-center justify-center pointer-events-none"><i class="fas fa-play"></i></button>
+                        <div class="relative inline-block h-28 w-auto z-10 mb-1">
+                            <video src="${att.fileUrl}" class="rounded-lg h-full object-cover border bg-black/10 cursor-pointer" onclick="viewImage('${att.fileUrl}', 'video', '${safeName}', '${msg.id}')"></video>
+                            <button onclick="viewImage('${att.fileUrl}', 'video', '${safeName}', '${msg.id}')" class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-black/50 hover:bg-indigo-600 transition text-white w-10 h-10 rounded-full flex items-center justify-center pointer-events-none"><i class="fas fa-play"></i></button>
                         </div>`;
                 } else {
                     const dName = att.fileName || 'File Terlampir';
