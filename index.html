@@ -6,6 +6,7 @@
     <title>SERVER MANAGER E2025</title>
     <link id="favicon" rel="icon" type="image/png" href="SERVER.png">
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <style>
         ::-webkit-scrollbar { width: 5px; }
@@ -29,7 +30,8 @@
 
     <div id="toastContainer" class="fixed top-5 left-1/2 transform -translate-x-1/2 z-[300] space-y-2 w-[90%] max-w-sm pointer-events-none"></div>
 
-    <div id="confirmModal" class="fixed inset-0 z-[150] bg-black/60 backdrop-blur-sm hidden flex items-center justify-center p-4 fade-in">
+    <!-- DIPERBAIKI: z-[150] diubah menjadi z-[250] agar tampil di atas image viewer -->
+    <div id="confirmModal" class="fixed inset-0 z-[250] bg-black/60 backdrop-blur-sm hidden flex items-center justify-center p-4 fade-in">
         <div class="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl scale-in text-center">
             <div class="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4 text-red-500 text-2xl"><i class="fas fa-exclamation-triangle"></i></div>
             <h3 id="confirmTitle" class="font-bold text-lg text-gray-800">Konfirmasi</h3>
@@ -76,17 +78,34 @@
         </div>
     </div>
 
+    <!-- IMAGE VIEWER SECTION -->
     <div id="imageViewer" class="fixed inset-0 z-[180] bg-black/95 hidden flex flex-col items-center justify-center p-4 fade-in">
         <button id="closeImageViewer" class="absolute top-4 right-4 text-white/70 hover:text-white p-2 rounded-full bg-white/10 hover:bg-white/20 transition z-50">
             <i class="fas fa-times text-xl"></i>
         </button>
 
         <div class="relative w-full h-full flex items-center justify-center overflow-hidden pb-16">
-            <img id="viewerImage" src="" class="hidden max-w-full max-h-[85vh] rounded-lg shadow-2xl object-contain scale-in">
+            <!-- Gambar dengan kemampuan zoom dan geser -->
+            <img id="viewerImage" src="" class="hidden max-w-full max-h-[85vh] rounded-lg shadow-2xl object-contain scale-in transition-transform duration-75" style="transform-origin: center center;">
             <video id="viewerVideo" src="" controls class="hidden max-w-full max-h-[85vh] rounded-lg shadow-2xl object-contain scale-in"></video>
         </div>
 
         <div class="absolute bottom-6 flex flex-col items-center gap-2">
+            
+            <!-- PANEL KETERANGAN GAMBAR -->
+            <div id="captionContainer" class="absolute bottom-full mb-4 left-1/2 transform -translate-x-1/2 w-[90vw] max-w-sm bg-white rounded-2xl shadow-2xl overflow-hidden hidden flex-col z-50 border border-indigo-100">
+                <div class="bg-gradient-to-r from-blue-600 to-indigo-600 p-3 flex justify-between items-center text-white">
+                    <h4 class="font-bold text-sm flex items-center gap-2"><i class="fas fa-comment-dots"></i> Keterangan Gambar</h4>
+                    <button id="closeCaptionBtn" class="hover:text-gray-200 transition"><i class="fas fa-times"></i></button>
+                </div>
+                <div class="p-4 bg-gray-50">
+                    <textarea id="captionInput" class="w-full border-2 border-indigo-100 rounded-xl p-3 text-sm outline-none focus:border-indigo-500 transition mb-3 bg-white resize-none dev-scroll" rows="3" placeholder="Tambahkan keterangan rahasia/petunjuk pencarian untuk gambar ini..."></textarea>
+                    <button id="saveCaptionBtn" class="w-full bg-blue-600 text-white font-bold py-3 rounded-xl hover:bg-blue-700 shadow-lg transition flex items-center justify-center gap-2">
+                        <i class="fas fa-save"></i> Simpan Keterangan
+                    </button>
+                </div>
+            </div>
+
             <div id="downloadOptions" class="hidden flex-col bg-white rounded-xl shadow-xl overflow-hidden mb-2 w-40 animate-fade-in bottom-full mb-2">
                 <button id="btnDlJpg" class="px-4 py-3 text-sm text-gray-700 hover:bg-indigo-50 hover:text-indigo-600 text-left border-b w-full">
                     <i class="fas fa-file-image mr-2"></i> Download JPG
@@ -95,11 +114,19 @@
                     <i class="fas fa-file-image mr-2"></i> Download PNG
                 </button>
             </div>
-            <button id="viewerMainDownloadBtn" class="px-8 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-full font-bold shadow-lg transition flex items-center gap-2">
-                <i class="fas fa-download"></i> <span id="dlBtnText">Download</span>
-            </button>
+            
+            <div class="flex gap-3 items-center">
+                <!-- Tombol Keterangan -->
+                <button id="openCaptionBtn" class="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-full font-bold shadow-lg transition flex items-center gap-2 hidden">
+                    <i class="fas fa-comment-dots text-lg"></i> Keterangan
+                </button>
+                <button id="viewerMainDownloadBtn" class="px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-full font-bold shadow-lg transition flex items-center gap-2">
+                    <i class="fas fa-download"></i> <span id="dlBtnText">Download</span>
+                </button>
+            </div>
         </div>
     </div>
+    <!-- END IMAGE VIEWER SECTION -->
 
     <div id="authOverlay" class="fixed inset-0 z-[100] bg-white flex items-center justify-center p-4">
         <div class="w-full max-w-md p-8 text-center animate-fade-in shadow-2xl rounded-2xl border border-gray-100 relative">
@@ -311,12 +338,19 @@
 
             <div id="searchContainer" class="hidden bg-gray-50 border-b px-4 py-2 items-center gap-3 z-30 shadow-inner text-sm">
                 <i class="fas fa-search text-gray-400"></i>
-                <input type="text" id="searchInput" class="flex-1 bg-transparent border-none outline-none focus:ring-0 text-gray-700" placeholder="Ketik untuk mencari chat, 'gambar', atau 'file'...">
+                <input type="text" id="searchInput" class="flex-1 bg-transparent border-none outline-none focus:ring-0 text-gray-700" placeholder="Ketik untuk mencari chat, 'keterangan gambar', atau 'file'...">
                 <button id="closeSearchBtn" class="text-gray-400 hover:text-red-500 p-1 transition"><i class="fas fa-times"></i></button>
             </div>
             
             <div id="chatBox" class="flex-1 overflow-y-auto p-4 space-y-4 hidden bg-white pb-20 md:pb-4 relative"></div>
             
+            <!-- TOMBOL SCROLL KE BAWAH -->
+            <button id="scrollToBottomBtn" class="absolute bottom-20 right-6 z-40 bg-white text-gray-600 hover:text-indigo-600 w-10 h-10 rounded-full shadow-xl border border-gray-200 flex items-center justify-center transition-all transform translate-y-10 opacity-0 hidden">
+                <i class="fas fa-chevron-down"></i>
+                <span id="unreadBadge" class="absolute -top-1 -right-1 bg-green-500 text-white text-[10px] font-bold w-5 h-5 rounded-full flex items-center justify-center shadow hidden">0</span>
+            </button>
+            <!-- END TOMBOL SCROLL -->
+
             <footer id="chatInputArea" class="bg-[#f0f2f5] p-2 md:p-3 hidden border-t absolute bottom-0 w-full md:relative">
                 
                 <div id="multiPreviewContainer" class="hidden mb-2 p-3 bg-white rounded-xl border mx-2 shadow-sm max-h-40 overflow-y-auto">
