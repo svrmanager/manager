@@ -1,6 +1,6 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
 import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, onAuthStateChanged, signOut, updateProfile, sendPasswordResetEmail } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
-import { getFirestore, collection, addDoc, query, orderBy, where, onSnapshot, serverTimestamp, updateDoc, arrayUnion, getDocs, doc, getDoc, deleteDoc, writeBatch, setDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { getFirestore, collection, addDoc, query, orderBy, where, onSnapshot, serverTimestamp, updateDoc, arrayUnion, arrayRemove, getDocs, doc, getDoc, deleteDoc, writeBatch, setDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
 // --- CONFIG FIREBASE ---
 const firebaseConfig = {
@@ -29,11 +29,27 @@ let currentRoomId = null;
 let currentRoomData = null;
 let unsubscribeMsg = null; 
 let unsubscribeRooms = null;
+let unsubscribeDevLogs = null;
+const notificationUnsubscribers = new Map();
 let confirmCallback = null; 
 let pendingFiles = []; 
+let pendingPreviewUrls = [];
 let currentRoomMessages = []; 
 let searchQuery = ""; 
 let allRoomsData = []; 
+let qrScanner = null;
+let qrScannerRunning = false;
+let nativePushInitialized = false;
+let nativePushReady = false;
+let pendingJoinCode = null;
+
+try {
+    pendingJoinCode = extractRoomCode(new URL(window.location.href).searchParams.get('join') || '');
+} catch (_) { /* URL lama tetap dapat dibuka */ }
+
+const isNativeAndroid = () => window.Capacitor?.isNativePlatform?.() && window.Capacitor?.getPlatform?.() === 'android';
+const notificationAudio = new Audio('assets/sounds/mixkit-bell-notification-933.wav');
+notificationAudio.preload = 'auto';
 
 let currentSessionPassword = "(Password terenkripsi, masuk via Auto-Login)";
 
@@ -174,15 +190,94 @@ const devDom = {
 };
 
 // --- NAVIGATION API ---
-window.addEventListener('popstate', (e) => {
-    if (window.innerWidth < 768 && !dom.chatPanel.classList.contains('translate-x-full')) {
-        dom.roomListPanel.classList.remove('-translate-x-full');
-        dom.chatPanel.classList.add('translate-x-full');
-        dom.chatPanel.classList.add('absolute');
-        dom.emptyChatState.classList.remove('hidden');
-        dom.searchContainer.classList.add('hidden');
+function showRoomList() {
+    dom.roomListPanel.classList.remove('-translate-x-full');
+    dom.chatPanel.classList.add('translate-x-full', 'absolute');
+    dom.searchContainer.classList.add('hidden');
+    dom.searchContainer.classList.remove('flex');
+}
+
+function closeImageViewer() {
+    dom.imageViewer.classList.add('hidden');
+    dom.viewerVideo.pause();
+    dom.viewerVideo.src = '';
+}
+
+function closeTopOverlay() {
+    const scannerModal = document.getElementById('modalQrScanner');
+    if (scannerModal && !scannerModal.classList.contains('hidden')) {
+        stopQrScanner();
+        scannerModal.classList.add('hidden');
+        return true;
     }
+    if (!dom.imageViewer.classList.contains('hidden')) {
+        closeImageViewer();
+        return true;
+    }
+
+    const overlays = [
+        dom.confirmModal, dom.logoutModal, devDom.authModal, devDom.dashboard,
+        document.getElementById('modalAccess'), document.getElementById('modalMembers'),
+        document.getElementById('modalRename'), document.getElementById('modalSuccess'),
+        document.getElementById('modalCreate'), document.getElementById('modalJoin')
+    ];
+    const openOverlay = overlays.find(item => item && !item.classList.contains('hidden'));
+    if (openOverlay) {
+        openOverlay.classList.add('hidden');
+        if (openOverlay === devDom.dashboard && unsubscribeDevLogs) {
+            unsubscribeDevLogs();
+            unsubscribeDevLogs = null;
+        }
+        return true;
+    }
+    if (!dom.groupMenuDropdown.classList.contains('hidden')) {
+        dom.groupMenuDropdown.classList.add('hidden');
+        return true;
+    }
+    if (!dom.searchContainer.classList.contains('hidden')) {
+        dom.closeSearchBtn.click();
+        return true;
+    }
+    return false;
+}
+
+async function handleBackAction() {
+    if (closeTopOverlay()) return;
+    if (window.innerWidth < 768 && !dom.chatPanel.classList.contains('translate-x-full')) {
+        if (window.location.hash === '#chat') history.back();
+        else showRoomList();
+        return;
+    }
+    if (isNativeAndroid()) {
+        try { await window.Capacitor.Plugins.App.minimizeApp(); } catch (_) { /* tetap di aplikasi */ }
+    } else if (window.history.length > 1) {
+        history.back();
+    }
+}
+
+window.addEventListener('popstate', () => {
+    if (window.innerWidth < 768 && !dom.chatPanel.classList.contains('translate-x-full')) showRoomList();
 });
+
+async function setupNativeBackButton() {
+    const appPlugin = window.Capacitor?.Plugins?.App;
+    if (!isNativeAndroid() || !appPlugin) return;
+    try {
+        await appPlugin.addListener('backButton', handleBackAction);
+        await appPlugin.addListener('appUrlOpen', event => {
+            const code = extractRoomCode(event?.url || '');
+            if (!code) return;
+            if (currentUser) {
+                document.getElementById('joinRoomCode').value = code;
+                toggleModal('modalJoin', true);
+            } else {
+                pendingJoinCode = code;
+            }
+        });
+    } catch (error) { console.warn('Native navigation:', error); }
+}
+
+void setupNativeBackButton();
 
 // --- HELPER FUNCTIONS ---
 window.showToast = (msg, type = 'success') => {
@@ -209,6 +304,135 @@ document.getElementById('btnOkConfirm').onclick = () => { if(confirmCallback) co
 function checkIsAdmin() {
     if(!currentRoomData || !currentUser) return false;
     return currentRoomData.admins ? currentRoomData.admins.includes(currentUser.uid) : (currentRoomData.createdBy === currentUser.email);
+}
+
+function escapeRegExp(value) {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function clearNotificationListeners() {
+    notificationUnsubscribers.forEach(unsubscribe => unsubscribe());
+    notificationUnsubscribers.clear();
+}
+
+function syncNotificationListeners() {
+    const webNotificationsAllowed = ("Notification" in window) && Notification.permission === "granted";
+    if (!currentUser || (!isNativeAndroid() && !webNotificationsAllowed)) {
+        clearNotificationListeners();
+        return;
+    }
+
+    const enabledRoomIds = new Set(JSON.parse(localStorage.getItem(`notif_${currentUser.uid}`) || '[]'));
+
+    notificationUnsubscribers.forEach((unsubscribe, roomId) => {
+        if (!enabledRoomIds.has(roomId)) {
+            unsubscribe();
+            notificationUnsubscribers.delete(roomId);
+        }
+    });
+
+    enabledRoomIds.forEach(roomId => {
+        if (notificationUnsubscribers.has(roomId)) return;
+
+        let isInitialSnapshot = true;
+        const messageQuery = query(collection(db, "messages"), where("roomId", "==", roomId));
+        const unsubscribe = onSnapshot(messageQuery, snapshot => {
+            if (!isInitialSnapshot) {
+                snapshot.docChanges().forEach(change => {
+                    if (change.type !== "added") return;
+                    const message = change.doc.data();
+                    if (message.uid !== currentUser?.uid) void checkAndShowNotification(roomId, message);
+                });
+            }
+            isInitialSnapshot = false;
+        }, error => console.error("Notification listener error:", error));
+
+        notificationUnsubscribers.set(roomId, unsubscribe);
+    });
+}
+
+function playNotificationSound() {
+    notificationAudio.currentTime = 0;
+    notificationAudio.play().catch(() => { /* Browser dapat menahan audio sebelum interaksi pertama */ });
+}
+
+async function setupNativePushNotifications() {
+    if (!isNativeAndroid() || !currentUser) return false;
+    if (nativePushInitialized) return nativePushReady;
+    const push = window.Capacitor?.Plugins?.PushNotifications;
+    const nativeNotification = window.Capacitor?.Plugins?.NativeNotification;
+    if (!push || !nativeNotification) return false;
+
+    try {
+        const status = await nativeNotification.isPushConfigured();
+        if (!status?.configured) return false;
+    } catch (error) {
+        console.warn('Pemeriksaan konfigurasi push gagal:', error);
+        return false;
+    }
+    nativePushInitialized = true;
+
+    try {
+        await push.createChannel({
+            id: 'chat_messages_v2',
+            name: 'Pesan chat',
+            description: 'Notifikasi pesan masuk Server Manager',
+            importance: 5,
+            visibility: 1,
+            vibration: true,
+            sound: 'mixkit_bell_notification_933.wav'
+        });
+        await push.addListener('registration', async token => {
+            if (!currentUser || !token?.value) return;
+            await setDoc(doc(db, 'users', currentUser.uid), {
+                pushTokens: arrayUnion(token.value),
+                pushPlatform: 'android',
+                pushUpdatedAt: serverTimestamp()
+            }, { merge: true });
+        });
+        await push.addListener('registrationError', error => console.warn('Registrasi push belum aktif:', error));
+        await push.addListener('pushNotificationActionPerformed', event => {
+            const roomId = event?.notification?.data?.roomId;
+            const room = allRoomsData.find(item => item.id === roomId);
+            if (room) openChatRoom(room.id, room);
+        });
+
+        let permission = await push.checkPermissions();
+        if (permission.receive === 'prompt') permission = await push.requestPermissions();
+        if (permission.receive !== 'granted') return false;
+        await push.register();
+        nativePushReady = true;
+        return true;
+    } catch (error) {
+        nativePushReady = false;
+        console.warn('Push Android belum dapat didaftarkan:', error);
+        return false;
+    }
+}
+
+async function deleteRoomAndMessages(roomId) {
+    const roomRef = doc(db, "rooms", roomId);
+    await updateDoc(roomRef, { isDeleting: true });
+
+    try {
+        while (true) {
+            const messageQuery = query(collection(db, "messages"), where("roomId", "==", roomId));
+            const messageSnapshot = await getDocs(messageQuery);
+            if (messageSnapshot.empty) break;
+
+            const messageDocs = messageSnapshot.docs;
+            for (let index = 0; index < messageDocs.length; index += 450) {
+                const batch = writeBatch(db);
+                messageDocs.slice(index, index + 450).forEach(messageDoc => batch.delete(messageDoc.ref));
+                await batch.commit();
+            }
+        }
+
+        await deleteDoc(roomRef);
+    } catch (error) {
+        try { await updateDoc(roomRef, { isDeleting: false }); } catch (_) { /* best effort */ }
+        throw error;
+    }
 }
 
 // --- ACTIVITY LOGGING (NEW) ---
@@ -297,6 +521,17 @@ dom.btnSaveUsername.onclick = async () => {
     try {
         await updateProfile(currentUser, { displayName: newName });
         await updateDoc(doc(db, "users", currentUser.uid), { displayName: newName });
+
+        const roomsQuery = query(collection(db, "rooms"), where("memberIds", "array-contains", currentUser.uid));
+        const roomsSnapshot = await getDocs(roomsQuery);
+        await Promise.all(roomsSnapshot.docs.map(roomDocument => {
+            const roomData = roomDocument.data();
+            const updatedMembers = (roomData.members || []).map(member => {
+                if (typeof member !== 'object' || member.uid !== currentUser.uid) return member;
+                return { ...member, username: newName };
+            });
+            return updateDoc(roomDocument.ref, { members: updatedMembers });
+        }));
         
         updateSidebarProfile();
         showToast("Username berhasil diperbarui!", "success");
@@ -376,12 +611,13 @@ dom.roomProfileBtn.onclick = () => {
 dom.roomAvatarInput.onchange = async (e) => {
     const file = e.target.files[0];
     if(!file || !currentRoomId) return;
+    const targetRoomId = currentRoomId;
     
     showToast("Mengunggah foto grup...", "success");
     dom.roomProfileBtn.classList.add("animate-pulse");
     try {
         const uploadData = await uploadToCloudinary(file);
-        await updateDoc(doc(db, "rooms", currentRoomId), { avatarUrl: uploadData.url });
+        await updateDoc(doc(db, "rooms", targetRoomId), { avatarUrl: uploadData.url });
         showToast("Foto grup diperbarui!", "success");
     } catch(err) { 
         showToast("Gagal: " + err.message, "error"); 
@@ -422,6 +658,11 @@ let zoomLevel = 1;
 let isDragging = false;
 let startX, startY;
 let translateX = 0, translateY = 0;
+let initialPinchDistance = 0;
+let initialPinchZoom = 1;
+let lastTouchX = 0;
+let lastTouchY = 0;
+let lastTapAt = 0;
 
 function updateImageTransform() {
     dom.viewerImage.style.transform = `translate(${translateX}px, ${translateY}px) scale(${zoomLevel})`;
@@ -479,6 +720,64 @@ window.addEventListener('mouseleave', () => {
         updateImageTransform();
     }
 });
+
+function touchDistance(touches) {
+    return Math.hypot(touches[0].clientX - touches[1].clientX, touches[0].clientY - touches[1].clientY);
+}
+
+dom.viewerImage.addEventListener('touchstart', event => {
+    event.preventDefault();
+    if (event.touches.length === 2) {
+        initialPinchDistance = touchDistance(event.touches);
+        initialPinchZoom = zoomLevel;
+        isDragging = false;
+        return;
+    }
+    if (event.touches.length === 1) {
+        const now = Date.now();
+        if (now - lastTapAt < 280) {
+            zoomLevel = zoomLevel > 1 ? 1 : 2.5;
+            if (zoomLevel === 1) translateX = translateY = 0;
+            updateImageTransform();
+            lastTapAt = 0;
+        } else {
+            lastTapAt = now;
+        }
+        lastTouchX = event.touches[0].clientX;
+        lastTouchY = event.touches[0].clientY;
+        isDragging = zoomLevel > 1;
+    }
+}, { passive: false });
+
+dom.viewerImage.addEventListener('touchmove', event => {
+    event.preventDefault();
+    if (event.touches.length === 2 && initialPinchDistance > 0) {
+        zoomLevel = Math.min(5, Math.max(1, initialPinchZoom * (touchDistance(event.touches) / initialPinchDistance)));
+        if (zoomLevel === 1) translateX = translateY = 0;
+        updateImageTransform();
+        return;
+    }
+    if (event.touches.length === 1 && zoomLevel > 1) {
+        const touch = event.touches[0];
+        translateX += touch.clientX - lastTouchX;
+        translateY += touch.clientY - lastTouchY;
+        lastTouchX = touch.clientX;
+        lastTouchY = touch.clientY;
+        updateImageTransform();
+    }
+}, { passive: false });
+
+dom.viewerImage.addEventListener('touchend', event => {
+    if (event.touches.length < 2) initialPinchDistance = 0;
+    if (event.touches.length === 0) isDragging = false;
+    updateImageTransform();
+}, { passive: true });
+
+dom.viewerImage.addEventListener('touchcancel', () => {
+    initialPinchDistance = 0;
+    isDragging = false;
+    updateImageTransform();
+}, { passive: true });
 
 window.viewImage = (url, type, originalName = 'download', msgId = null, currentCaption = '') => {
     dom.imageViewer.classList.remove('hidden');
@@ -542,11 +841,7 @@ document.addEventListener('click', (e) => {
     }
 });
 
-document.getElementById('closeImageViewer').onclick = () => {
-    dom.imageViewer.classList.add('hidden');
-    dom.viewerVideo.pause(); 
-    dom.viewerVideo.src = "";
-};
+document.getElementById('closeImageViewer').onclick = closeImageViewer;
 
 // Event Listeners UI Keterangan (Caption)
 dom.openCaptionBtn.onclick = () => dom.captionContainer.classList.remove('hidden');
@@ -609,25 +904,51 @@ dom.saveCaptionBtn.onclick = () => {
 
 
 window.downloadFile = async (url, filename) => {
-    showToast(`Mengunduh ${filename}...`, "success");
-    logActivity("download", filename); // DEV LOGGING
+    const safeFilename = String(filename || 'unduhan')
+        .replace(/[\\/:*?"<>|\x00-\x1F]/g, '_')
+        .replace(/^\.+/, '')
+        .trim() || 'unduhan';
+    showToast(`Mengunduh ${safeFilename}...`, "success");
+    logActivity("download", safeFilename); // DEV LOGGING
+
     try {
+        const capacitor = window.Capacitor;
+        const isNativeAndroid = capacitor?.isNativePlatform?.() && capacitor?.getPlatform?.() === 'android';
+        const nativeDownloader = capacitor?.Plugins?.NativeDownload;
+
+        if (isNativeAndroid && nativeDownloader) {
+            await nativeDownloader.download({ url, fileName: safeFilename });
+            showToast(`Download dimulai. Cek folder Download: ${safeFilename}`, "success");
+            return;
+        }
+
         const response = await fetch(url);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const blob = await response.blob();
         const blobUrl = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.style.display = 'none';
         a.href = blobUrl;
-        a.download = filename;
+        a.download = safeFilename;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
-        window.URL.revokeObjectURL(blobUrl);
+        window.setTimeout(() => window.URL.revokeObjectURL(blobUrl), 30000);
+        showToast(`File tersimpan: ${safeFilename}`, "success");
     } catch (e) {
+        const capacitor = window.Capacitor;
+        if (capacitor?.isNativePlatform?.()) {
+            showToast(e?.message || "Download gagal. Periksa koneksi dan izin aplikasi.", "error");
+            return;
+        }
+
+        showToast("Unduhan dibuka langsung karena file tidak dapat diproses browser.", "error");
         const a = document.createElement('a');
         a.style.display = 'none';
         a.href = url;
-        a.download = filename;
+        a.download = safeFilename;
+        a.target = '_blank';
+        a.rel = 'noopener';
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
@@ -661,6 +982,9 @@ window.removePendingFile = (index) => {
 };
 
 function renderPendingFiles() {
+    pendingPreviewUrls.forEach(url => URL.revokeObjectURL(url));
+    pendingPreviewUrls = [];
+
     if(pendingFiles.length === 0) {
         dom.multiPreviewContainer.classList.add('hidden');
         return;
@@ -676,6 +1000,7 @@ function renderPendingFiles() {
         let iconHtml = '<i class="fas fa-file-alt text-2xl text-indigo-400"></i>';
         if (file.type.startsWith('image/')) {
             const tempUrl = URL.createObjectURL(file);
+            pendingPreviewUrls.push(tempUrl);
             iconHtml = `<img src="${tempUrl}" class="w-8 h-8 object-cover rounded shadow-sm">`;
         } else if (file.type.startsWith('video/')) {
             iconHtml = '<i class="fas fa-video text-2xl text-purple-400"></i>';
@@ -732,6 +1057,11 @@ onAuthStateChanged(auth, async (user) => {
             const dName = user.displayName || user.email.split('@')[0];
 
             if (userSnap.exists()) {
+                if (userSnap.data().disabled) {
+                    showToast("Akses akun ini telah dinonaktifkan oleh pengelola.", "error");
+                    await signOut(auth);
+                    return;
+                }
                 currentCustomUserId = userSnap.data().userId;
                 await updateDoc(userRef, { email: user.email, displayName: dName, lastActive: serverTimestamp() });
             } else {
@@ -741,11 +1071,29 @@ onAuthStateChanged(auth, async (user) => {
                 currentCustomUserId = newId;
                 await setDoc(userRef, { userId: currentCustomUserId, email: user.email, displayName: dName, lastActive: serverTimestamp() });
             }
+            const savedNotificationRooms = JSON.parse(localStorage.getItem(`notif_${user.uid}`) || '[]');
+            if (savedNotificationRooms.length) {
+                await setDoc(userRef, { notificationRooms: arrayUnion(...savedNotificationRooms) }, { merge: true });
+            }
+            syncNotificationListeners();
+            void setupNativePushNotifications();
+            if (pendingJoinCode) {
+                document.getElementById('joinRoomCode').value = pendingJoinCode;
+                toggleModal('modalJoin', true);
+                pendingJoinCode = null;
+            }
         } catch (e) { console.error("Error setting user ID:", e); }
 
     } else {
         if (unsubscribeRooms) { unsubscribeRooms(); unsubscribeRooms = null; }
         if (unsubscribeMsg) { unsubscribeMsg(); unsubscribeMsg = null; }
+        if (unsubscribeDevLogs) { unsubscribeDevLogs(); unsubscribeDevLogs = null; }
+        clearNotificationListeners();
+        if (isNativeAndroid() && nativePushInitialized) {
+            try { await window.Capacitor?.Plugins?.PushNotifications?.removeAllListeners(); } catch (_) { /* logout tetap lanjut */ }
+        }
+        nativePushInitialized = false;
+        nativePushReady = false;
         
         currentUser = null;
         currentCustomUserId = "LOADING...";
@@ -816,14 +1164,21 @@ document.getElementById('toggleAuthBtn').onclick = function() {
 };
 
 document.getElementById('authBtn').onclick = async () => {
-    const email = document.getElementById('emailInput').value;
+    const authButton = document.getElementById('authBtn');
+    const email = document.getElementById('emailInput').value.trim();
     const pass = document.getElementById('passInput').value;
-    const username = document.getElementById('usernameInput').value;
-    const isRegister = document.getElementById('authBtn').innerText.includes("Daftar");
+    const username = document.getElementById('usernameInput').value.trim();
+    const isRegister = authButton.innerText.includes("Daftar");
 
+    if (!email || !/^\S+@\S+\.\S+$/.test(email)) return showToast("Masukkan alamat email yang valid.", "error");
+    if (!pass) return showToast("Password wajib diisi.", "error");
+    if (isRegister && !username) return showToast("Username wajib diisi!", "error");
+
+    const originalLabel = authButton.innerText;
+    authButton.disabled = true;
+    authButton.innerHTML = '<i class="fas fa-circle-notch fa-spin mr-2"></i> Memproses...';
     try {
         if (isRegister) {
-            if (!username) throw new Error("Username wajib diisi!");
             const userCred = await createUserWithEmailAndPassword(auth, email, pass);
             await updateProfile(userCred.user, { displayName: username });
             currentUser = userCred.user;
@@ -832,7 +1187,18 @@ document.getElementById('authBtn').onclick = async () => {
             await signInWithEmailAndPassword(auth, email, pass);
             currentSessionPassword = pass; 
         }
-    } catch (e) { showToast(e.message, 'error'); }
+    } catch (e) {
+        const friendlyErrors = {
+            'auth/email-already-in-use': 'Email ini sudah terdaftar.',
+            'auth/invalid-credential': 'Email atau password salah.',
+            'auth/weak-password': 'Password terlalu lemah. Gunakan minimal 6 karakter.',
+            'auth/too-many-requests': 'Terlalu banyak percobaan. Silakan tunggu sebentar.'
+        };
+        showToast(friendlyErrors[e.code] || e.message, 'error');
+    } finally {
+        authButton.disabled = false;
+        authButton.innerText = originalLabel;
+    }
 };
 
 // --- MODALS ---
@@ -845,6 +1211,110 @@ document.getElementById('btnCloseSuccess').onclick = () => toggleModal('modalSuc
 document.getElementById('btnCloseRename').onclick = () => toggleModal('modalRename', false);
 dom.btnCloseAccess.onclick = () => toggleModal('modalAccess', false);
 dom.btnCloseMembers.onclick = () => toggleModal('modalMembers', false);
+
+function extractRoomCode(value) {
+    if (!value) return null;
+    const raw = String(value).trim();
+    try {
+        const parsed = new URL(raw);
+        const fromUrl = parsed.searchParams.get('join');
+        if (fromUrl && /^[A-Z0-9]{7}$/i.test(fromUrl)) return fromUrl.toUpperCase();
+    } catch (_) { /* QR dapat berisi kode langsung */ }
+    const normalized = raw.replace(/^SVRMANAGER\s*:\s*/i, '').trim().toUpperCase();
+    return /^[A-Z0-9]{7}$/.test(normalized) ? normalized : null;
+}
+
+function renderRoomQr(container, code) {
+    if (!container || !code || typeof window.qrcode !== 'function') return;
+    const qr = window.qrcode(0, 'M');
+    qr.addData(`https://svrmanager.my.id/?join=${encodeURIComponent(code)}`);
+    qr.make();
+    container.innerHTML = qr.createImgTag(6, 8, `QR grup ${code}`);
+}
+
+function applyScannedRoomCode(value) {
+    const code = extractRoomCode(value);
+    const status = document.getElementById('qrScanStatus');
+    if (!code) {
+        if (status) status.textContent = 'QR ini bukan QR grup Server Manager yang valid.';
+        return false;
+    }
+    document.getElementById('joinRoomCode').value = code;
+    void stopQrScanner();
+    toggleModal('modalQrScanner', false);
+    toggleModal('modalJoin', true);
+    showToast(`Kode grup ${code} berhasil dipindai.`, 'success');
+    return true;
+}
+
+async function stopQrScanner() {
+    if (!qrScanner) return;
+    try {
+        if (qrScannerRunning) await qrScanner.stop();
+    } catch (_) { /* scanner mungkin sudah berhenti */ }
+    try { await qrScanner.clear(); } catch (_) { /* elemen akan dipakai ulang */ }
+    qrScannerRunning = false;
+    qrScanner = null;
+}
+
+async function startQrScanner() {
+    const status = document.getElementById('qrScanStatus');
+    if (typeof window.Html5Qrcode !== 'function') {
+        status.textContent = 'Pemindai QR gagal dimuat. Gunakan gambar QR atau masukkan kode.';
+        return;
+    }
+    await stopQrScanner();
+    qrScanner = new window.Html5Qrcode('qrReader');
+    status.textContent = 'Meminta izin kamera…';
+    try {
+        await qrScanner.start(
+            { facingMode: 'environment' },
+            { fps: 10, qrbox: (width, height) => {
+                const size = Math.floor(Math.min(width, height) * 0.72);
+                return { width: size, height: size };
+            } },
+            decodedText => {
+                qrScannerRunning = true;
+                applyScannedRoomCode(decodedText);
+            },
+            () => {}
+        );
+        qrScannerRunning = true;
+        status.textContent = 'Arahkan kamera ke QR grup.';
+    } catch (error) {
+        status.textContent = 'Kamera tidak tersedia. Pilih gambar QR atau masukkan kode secara manual.';
+        console.warn('QR camera:', error);
+    }
+}
+
+document.getElementById('btnScanQr').onclick = () => {
+    toggleModal('modalJoin', false);
+    toggleModal('modalQrScanner', true);
+    void startQrScanner();
+};
+
+document.getElementById('btnCloseQrScanner').onclick = () => {
+    void stopQrScanner();
+    toggleModal('modalQrScanner', false);
+    toggleModal('modalJoin', true);
+};
+
+document.getElementById('qrImageInput').onchange = async event => {
+    const file = event.target.files?.[0];
+    if (!file || typeof window.Html5Qrcode !== 'function') return;
+    const status = document.getElementById('qrScanStatus');
+    await stopQrScanner();
+    qrScanner = new window.Html5Qrcode('qrReader');
+    try {
+        status.textContent = 'Membaca gambar QR…';
+        const decodedText = await qrScanner.scanFile(file, true);
+        applyScannedRoomCode(decodedText);
+    } catch (error) {
+        status.textContent = 'QR tidak terbaca. Coba gambar yang lebih jelas.';
+    } finally {
+        event.target.value = '';
+    }
+};
 
 // --- GROUP LOGIC ---
 document.getElementById('confirmCreateRoom').onclick = async () => {
@@ -864,24 +1334,31 @@ document.getElementById('confirmCreateRoom').onclick = async () => {
         });
         toggleModal('modalCreate', false); toggleModal('modalSuccess', true);
         document.getElementById('generatedCodeDisplay').innerText = code;
+        renderRoomQr(document.getElementById('generatedQrCode'), code);
         document.getElementById('newRoomName').value = '';
     } catch (e) { showToast(e.message, 'error'); }
 };
 
 document.getElementById('confirmJoinRoom').onclick = async () => {
-    const code = document.getElementById('joinRoomCode').value.toUpperCase();
+    const joinButton = document.getElementById('confirmJoinRoom');
+    const code = document.getElementById('joinRoomCode').value.trim().toUpperCase();
     if(!code) return;
-    const q = query(collection(db, "rooms"), where("code", "==", code));
-    const snap = await getDocs(q);
-    if(snap.empty) return showToast("Kode salah atau tidak ditemukan!", 'error');
-    
-    const roomDoc = snap.docs[0];
-    const roomData = roomDoc.data();
-    
-    if(roomData.memberIds && roomData.memberIds.includes(currentUser.uid)) return showToast("Anda sudah berada di grup ini.", 'error');
-    if(roomData.pendingMembers && roomData.pendingMembers.some(m => m.uid === currentUser.uid)) return showToast("Menunggu persetujuan admin grup.", 'error');
 
+    joinButton.disabled = true;
+    const originalLabel = joinButton.innerHTML;
+    joinButton.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i>';
     try {
+        const q = query(collection(db, "rooms"), where("code", "==", code));
+        const snap = await getDocs(q);
+        if(snap.empty) return showToast("Kode salah atau tidak ditemukan!", 'error');
+
+        const roomDoc = snap.docs[0];
+        const roomData = roomDoc.data();
+
+        if(roomData.isDeleting) return showToast("Grup ini sedang dihapus.", 'error');
+        if(roomData.memberIds && roomData.memberIds.includes(currentUser.uid)) return showToast("Anda sudah berada di grup ini.", 'error');
+        if(roomData.pendingMembers && roomData.pendingMembers.some(m => m.uid === currentUser.uid)) return showToast("Menunggu persetujuan admin grup.", 'error');
+
         const myProfile = { uid: currentUser.uid, email: currentUser.email, username: currentUser.displayName || currentUser.email.split('@')[0] };
         
         if (roomData.isPrivate) {
@@ -893,7 +1370,12 @@ document.getElementById('confirmJoinRoom').onclick = async () => {
         }
         toggleModal('modalJoin', false); 
         document.getElementById('joinRoomCode').value = '';
-    } catch (e) { showToast(e.message, 'error'); }
+    } catch (e) {
+        showToast("Gagal bergabung: " + e.message, 'error');
+    } finally {
+        joinButton.disabled = false;
+        joinButton.innerHTML = originalLabel;
+    }
 };
 
 // --- ARSIP & LOAD ROOMS ---
@@ -992,6 +1474,10 @@ function updateHeaderRoomProfile() {
 function openChatRoom(roomId, roomData) {
     currentRoomId = roomId;
     currentRoomData = roomData;
+    unreadCount = 0;
+    dom.unreadBadge.classList.add('hidden');
+    pendingFiles = [];
+    renderPendingFiles();
     
     document.getElementById('activeRoomName').innerText = roomData.name;
     updateHeaderRoomProfile();
@@ -1021,7 +1507,7 @@ function openChatRoom(roomId, roomData) {
     loadMessages(roomId);
 }
 
-document.getElementById('backToDashboard').onclick = () => history.back(); 
+document.getElementById('backToDashboard').onclick = handleBackAction;
 
 // --- MENU TITIK 3 ---
 function updateDropdownMenuText() {
@@ -1062,6 +1548,7 @@ dom.accessSettingsBtn.onclick = () => {
     dom.groupMenuDropdown.classList.add('hidden');
     dom.accessCodeDisplay.value = currentRoomData.code;
     dom.togglePrivate.checked = currentRoomData.isPrivate || false;
+    renderRoomQr(document.getElementById('accessQrCode'), currentRoomData.code);
     toggleModal('modalAccess', true);
 };
 
@@ -1099,7 +1586,12 @@ dom.archiveRoomBtn.onclick = () => {
 
 dom.toggleNotifBtn.onclick = async () => {
     dom.groupMenuDropdown.classList.add('hidden');
-    if (Notification.permission !== "granted") {
+    if (isNativeAndroid()) {
+        const enabled = await setupNativePushNotifications();
+        if (!enabled) showToast('Izin diberikan, tetapi push latar belakang belum terhubung ke Firebase Android.', 'error');
+    } else if (!("Notification" in window)) {
+        return showToast("Perangkat ini belum mendukung notifikasi web.", "error");
+    } else if (Notification.permission !== "granted") {
         try {
             const perm = await Notification.requestPermission();
             if (perm !== "granted") return showToast("Izin notifikasi ditolak browser.", "error");
@@ -1109,26 +1601,37 @@ dom.toggleNotifBtn.onclick = async () => {
     let notifList = JSON.parse(localStorage.getItem(`notif_${currentUser.uid}`) || '[]');
     if (notifList.includes(currentRoomId)) {
         notifList = notifList.filter(id => id !== currentRoomId);
+        await setDoc(doc(db, 'users', currentUser.uid), { notificationRooms: arrayRemove(currentRoomId) }, { merge: true });
         showToast("Notifikasi dimatikan untuk grup ini", "success");
     } else {
         notifList.push(currentRoomId);
+        await setDoc(doc(db, 'users', currentUser.uid), { notificationRooms: arrayUnion(currentRoomId) }, { merge: true });
         showToast("Notifikasi diaktifkan untuk grup ini", "success");
     }
     localStorage.setItem(`notif_${currentUser.uid}`, JSON.stringify(notifList));
+    syncNotificationListeners();
     updateDropdownMenuText();
 };
 
-function checkAndShowNotification(roomId, msgData) {
+async function checkAndShowNotification(roomId, msgData) {
     let notifList = JSON.parse(localStorage.getItem(`notif_${currentUser.uid}`) || '[]');
-    if (notifList.includes(roomId) && Notification.permission === "granted") {
+    if (notifList.includes(roomId)) {
         let notifBody = msgData.text || "Mengirim lampiran";
         if (msgData.attachments && msgData.attachments.length > 0) {
              notifBody = "Mengirim " + msgData.attachments.length + " file/gambar";
         }
-        new Notification(msgData.username || "Pesan Baru", {
-            body: notifBody,
-            icon: "https://cdn-icons-png.flaticon.com/512/1041/1041916.png" 
-        });
+        const title = msgData.username || "Pesan Baru";
+        if (isNativeAndroid() && document.visibilityState === 'visible' && window.Capacitor?.Plugins?.NativeNotification) {
+            try {
+                await window.Capacitor.Plugins.NativeNotification.show({ title, body: notifBody, roomId });
+                return;
+            } catch (error) { console.warn('Notifikasi native:', error); }
+        }
+        if (isNativeAndroid()) return; // Saat di latar belakang, FCM menampilkan satu notifikasi sistem.
+        if (("Notification" in window) && Notification.permission === "granted") {
+            new Notification(title, { body: notifBody, icon: "icons/icon-192.webp" });
+            playNotificationSound();
+        }
     }
 }
 
@@ -1140,14 +1643,10 @@ function loadMessages(roomId) {
     let isFirstLoad = true; 
     
     unsubscribeMsg = onSnapshot(q, (snap) => {
+        const newIncomingCount = isFirstLoad ? 0 : snap.docChanges().filter(change => {
+            return change.type === "added" && change.doc.data().uid !== currentUser.uid;
+        }).length;
         currentRoomMessages = []; 
-        snap.docChanges().forEach((change) => {
-            if (change.type === "added" && !isFirstLoad) {
-                const msgData = change.doc.data();
-                if (msgData.uid !== currentUser.uid) { checkAndShowNotification(roomId, msgData); }
-            }
-        });
-        
         snap.forEach(doc => {
             const msgData = doc.data();
             msgData.id = doc.id;
@@ -1162,14 +1661,17 @@ function loadMessages(roomId) {
 
         const wasFirstLoad = isFirstLoad;
         isFirstLoad = false;
-        renderAllMessages(wasFirstLoad); 
+        renderAllMessages(wasFirstLoad, newIncomingCount); 
     }, (error) => {
         console.error("Error load messages:", error);
         dom.chatBox.innerHTML = `<div class="p-6 text-center text-red-500 font-bold mt-10 bg-red-50 rounded-2xl mx-4 shadow-sm border border-red-100">Gagal Mengambil Obrolan: <br><span class="text-xs font-normal text-red-400 mt-2 block">${error.message}</span></div>`;
     });
 }
 
-function renderAllMessages(forceScrollToBottom = false) {
+function renderAllMessages(forceScrollToBottom = false, newIncomingCount = 0) {
+    const previousScrollTop = dom.chatBox.scrollTop;
+    const previousScrollHeight = dom.chatBox.scrollHeight;
+    const wasNearBottom = previousScrollHeight - previousScrollTop - dom.chatBox.clientHeight <= 200;
     dom.chatBox.innerHTML = '';
     let lastDateString = null; 
 
@@ -1205,7 +1707,7 @@ function renderAllMessages(forceScrollToBottom = false) {
         const currentDateString = msgDate.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
         if (currentDateString !== lastDateString) {
             const divider = document.createElement('div');
-            divider.className = "flex justify-center items-center my-6 select-none relative z-0";
+            divider.className = "chat-stream-item flex justify-center items-center my-6 select-none relative z-0";
             divider.innerHTML = `
                 <div class="h-px bg-gray-200 flex-1"></div>
                 <span class="px-4 py-1 rounded-full bg-gray-50 border text-[10px] font-bold text-gray-500 uppercase tracking-widest">${currentDateString}</span>
@@ -1219,18 +1721,14 @@ function renderAllMessages(forceScrollToBottom = false) {
     
     // Logika Auto-scroll yang disesuaikan
     if (!searchQuery) {
-        if (forceScrollToBottom) {
-            // Paksa scroll ke paling bawah pada load awal
+        if (forceScrollToBottom || wasNearBottom) {
             setTimeout(() => {
                 dom.chatBox.scrollTop = dom.chatBox.scrollHeight;
             }, 100); 
         } else {
-            const isScrolledUp = dom.chatBox.scrollHeight - dom.chatBox.scrollTop - dom.chatBox.clientHeight > 200;
-            
-            if (!isScrolledUp) {
-                dom.chatBox.scrollTop = dom.chatBox.scrollHeight;
-            } else {
-                unreadCount++;
+            dom.chatBox.scrollTop = previousScrollTop;
+            if (newIncomingCount > 0) {
+                unreadCount += newIncomingCount;
                 dom.unreadBadge.innerText = unreadCount;
                 dom.unreadBadge.classList.remove('hidden');
             }
@@ -1252,7 +1750,7 @@ function renderMessage(msg) {
     const isMe = msg.uid === currentUser.uid;
     const senderName = msg.username || msg.email.split('@')[0];
     const div = document.createElement('div');
-    div.className = `flex w-full mb-4 ${isMe ? 'justify-end' : 'justify-start'} animate-fade-in group relative z-0`;
+    div.className = `chat-stream-item flex w-full min-w-0 mb-4 ${isMe ? 'justify-end' : 'justify-start'} animate-fade-in group relative z-0`;
 
     const deleteBtn = (isMe && !msg.isDeleted) ? 
         `<button onclick="deleteMessage('${msg.id}')" class="text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition ml-2" title="Hapus"><i class="fas fa-trash-alt"></i></button>` : '';
@@ -1321,11 +1819,11 @@ function renderMessage(msg) {
 
         let displayMsgText = msg.text || '';
         if (searchQuery && displayMsgText.toLowerCase().includes(searchQuery)) {
-            const regex = new RegExp(`(${searchQuery})`, "gi");
+            const regex = new RegExp(`(${escapeRegExp(searchQuery)})`, "gi");
             displayMsgText = displayMsgText.replace(regex, "<span class='bg-yellow-200 text-black px-1 rounded'>$1</span>");
         }
 
-        const textContent = displayMsgText ? `<p class="text-sm leading-relaxed whitespace-pre-wrap">${displayMsgText}</p>` : '';
+        const textContent = displayMsgText ? `<p class="chat-message-text text-sm leading-relaxed whitespace-pre-wrap">${displayMsgText}</p>` : '';
         contentHtml = mediaContent + textContent;
     }
 
@@ -1334,12 +1832,12 @@ function renderMessage(msg) {
     const timeString = msgDate.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', hour12: false }).replace('.', ':');
 
     div.innerHTML = `
-        <div class="max-w-[85%] min-w-[140px] px-3 py-2 rounded-xl shadow-sm ${bubbleClass} relative">
+        <div class="chat-bubble min-w-0 px-3 py-2 rounded-xl shadow-sm ${bubbleClass} relative">
             ${bubbleHeader} 
             ${contentHtml}
             <div class="flex justify-end items-center gap-1 mt-1">
                 <span class="text-[9px] text-gray-400 select-none">${timeString}</span>
-                ${isMe && !msg.isDeleted ? '<i class="fas fa-check-double text-[9px] text-blue-500"></i>' : ''}
+                ${isMe && !msg.isDeleted ? '<i class="fas fa-check text-[9px] text-blue-500" title="Terkirim"></i>' : ''}
             </div>
         </div>
     `;
@@ -1360,8 +1858,11 @@ dom.msgInput.addEventListener('keydown', function(e) {
 
 dom.sendBtn.onclick = async () => {
     if (!currentRoomId) return;
+    if (currentRoomData?.isDeleting) return showToast("Grup ini sedang dihapus.", "error");
+    const targetRoomId = currentRoomId;
     const text = dom.msgInput.value.trim();
-    if (!text && pendingFiles.length === 0) return;
+    const filesToSend = [...pendingFiles];
+    if (!text && filesToSend.length === 0) return;
 
     dom.sendBtn.disabled = true;
     dom.sendBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>'; 
@@ -1369,8 +1870,8 @@ dom.sendBtn.onclick = async () => {
 
     try {
         updateUserActivity(); 
-        if (pendingFiles.length > 0) {
-            const uploadPromises = pendingFiles.map(file => uploadToCloudinary(file).then(data => ({ fileUrl: data.url, fileName: file.name, type: data.type })));
+        if (filesToSend.length > 0) {
+            const uploadPromises = filesToSend.map(file => uploadToCloudinary(file).then(data => ({ fileUrl: data.url, fileName: file.name, type: data.type })));
             finalAttachments = await Promise.all(uploadPromises);
             logActivity("upload", `${finalAttachments.length} file terlampir`); // DEV LOG
         } else {
@@ -1378,7 +1879,7 @@ dom.sendBtn.onclick = async () => {
         }
 
         await addDoc(collection(db, "messages"), {
-            roomId: currentRoomId,
+            roomId: targetRoomId,
             text: text,
             uid: currentUser.uid,
             email: currentUser.email,
@@ -1388,10 +1889,12 @@ dom.sendBtn.onclick = async () => {
             timestamp: serverTimestamp()
         });
 
-        dom.msgInput.value = '';
-        dom.msgInput.style.height = 'auto';
-        pendingFiles = [];
-        renderPendingFiles();
+        if (currentRoomId === targetRoomId) {
+            dom.msgInput.value = '';
+            dom.msgInput.style.height = 'auto';
+            pendingFiles = [];
+            renderPendingFiles();
+        }
 
     } catch (e) { 
         showToast("Gagal mengirim: " + e.message, 'error'); 
@@ -1551,10 +2054,9 @@ window.acceptMember = async (targetUid) => {
     const targetProfile = pendingArr.find(m => m.uid === targetUid);
     if(!targetProfile) return;
     
-    const newPending = pendingArr.filter(m => m.uid !== targetUid);
     try {
         await updateDoc(doc(db, "rooms", currentRoomId), {
-            pendingMembers: newPending,
+            pendingMembers: arrayRemove(targetProfile),
             members: arrayUnion(targetProfile),
             memberIds: arrayUnion(targetUid)
         });
@@ -1564,9 +2066,10 @@ window.acceptMember = async (targetUid) => {
 
 window.rejectMember = async (targetUid) => {
     const pendingArr = currentRoomData.pendingMembers || [];
-    const newPending = pendingArr.filter(m => m.uid !== targetUid);
+    const targetProfile = pendingArr.find(m => m.uid === targetUid);
+    if (!targetProfile) return;
     try {
-        await updateDoc(doc(db, "rooms", currentRoomId), { pendingMembers: newPending });
+        await updateDoc(doc(db, "rooms", currentRoomId), { pendingMembers: arrayRemove(targetProfile) });
         showToast("Persetujuan ditolak.", "success");
     } catch(e) { showToast(e.message, "error"); }
 };
@@ -1584,12 +2087,7 @@ dom.leaveGroupBtn.onclick = () => {
             let newAdmins = (rData.admins || [rData.createdBy || ""]).filter(id => id !== currentUser.uid);
 
             if (newMembers.length === 0) {
-                await deleteDoc(roomRef);
-                const chatQ = query(collection(db, "messages"), where("roomId", "==", currentRoomId));
-                const chatSnap = await getDocs(chatQ);
-                const batch = writeBatch(db);
-                chatSnap.forEach(d => batch.delete(d.ref));
-                await batch.commit();
+                await deleteRoomAndMessages(currentRoomId);
                 showToast("Grup dihapus karena kosong.", 'success');
             } else {
                 let newLeader = rData.createdBy;
@@ -1605,6 +2103,10 @@ dom.leaveGroupBtn.onclick = () => {
             dom.chatHeader.classList.add('hidden');
             dom.chatBox.classList.add('hidden');
             dom.chatInputArea.classList.add('hidden');
+            if (unsubscribeMsg) { unsubscribeMsg(); unsubscribeMsg = null; }
+            currentRoomId = null;
+            currentRoomData = null;
+            currentRoomMessages = [];
         } catch (e) { showToast(e.message, 'error'); }
     });
 };
@@ -1664,6 +2166,7 @@ devDom.btnEnter.onclick = () => {
 
 devDom.btnExit.onclick = () => {
     devDom.dashboard.classList.add('hidden');
+    if (unsubscribeDevLogs) { unsubscribeDevLogs(); unsubscribeDevLogs = null; }
     showToast("EXITING DEV SYSTEM", "success");
 };
 
@@ -1699,7 +2202,9 @@ async function loadDevDashboard() {
                             <i class="fas fa-circle text-[8px] mr-1"></i> ${isOnline ? 'Aktif Sekarang' : 'Terakhir: ' + timeStr}
                         </p>
                     </div>
-                    <button onclick="forceDeleteUser('${uId}', '${u.email}')" class="text-red-500 bg-red-500/10 hover:bg-red-500/30 px-3 py-1.5 rounded text-xs font-bold transition">HAPUS</button>
+                    ${u.disabled
+                        ? '<span class="text-[10px] font-bold text-red-400 bg-red-500/10 px-3 py-1.5 rounded">NONAKTIF</span>'
+                        : `<button onclick="forceDeleteUser('${uId}', '${u.email}')" class="text-red-500 bg-red-500/10 hover:bg-red-500/30 px-3 py-1.5 rounded text-xs font-bold transition">NONAKTIFKAN</button>`}
                 </div>
             `;
         });
@@ -1728,7 +2233,8 @@ async function loadDevDashboard() {
 
         // 3. Activity Logs (Realtime)
         const logsQ = query(collection(db, "activity_logs"), orderBy("timestamp", "desc"));
-        onSnapshot(logsQ, (snap) => {
+        if (unsubscribeDevLogs) unsubscribeDevLogs();
+        unsubscribeDevLogs = onSnapshot(logsQ, (snap) => {
             let logsHTML = '';
             snap.forEach(docSnap => {
                 const l = docSnap.data();
@@ -1750,7 +2256,7 @@ async function loadDevDashboard() {
                 `;
             });
             devDom.logsList.innerHTML = logsHTML || '<p class="text-gray-600 text-center">Belum ada aktivitas.</p>';
-        });
+        }, error => console.error("Activity log listener error:", error));
 
         // 4. Traffic & Media Stats (dari Messages)
         const msgsSnap = await getDocs(collection(db, "messages"));
@@ -1798,10 +2304,41 @@ async function loadDevDashboard() {
 
 // Dev Mode Actions
 window.forceDeleteUser = async (uid, email) => {
-    if(!confirm(`PERINGATAN: Hapus permanen pengguna ${email}?`)) return;
+    if(!confirm(`Nonaktifkan akses ${email} dan keluarkan dari semua grup?`)) return;
     try {
-        await deleteDoc(doc(db, "users", uid));
-        showToast("Pengguna dihapus dari database", "success");
+        await setDoc(doc(db, "users", uid), {
+            disabled: true,
+            disabledAt: serverTimestamp()
+        }, { merge: true });
+
+        const roomsSnapshot = await getDocs(collection(db, "rooms"));
+        for (const roomDocument of roomsSnapshot.docs) {
+            const roomData = roomDocument.data();
+            if (!(roomData.memberIds || []).includes(uid) && !(roomData.pendingMembers || []).some(member => member.uid === uid)) continue;
+
+            const members = (roomData.members || []).filter(member => (typeof member === 'object' ? member.uid : member) !== uid);
+            const memberIds = (roomData.memberIds || []).filter(memberId => memberId !== uid);
+            const pendingMembers = (roomData.pendingMembers || []).filter(member => member.uid !== uid);
+            let admins = (roomData.admins || []).filter(adminId => adminId !== uid);
+
+            if (members.length === 0) {
+                await deleteRoomAndMessages(roomDocument.id);
+                continue;
+            }
+
+            if (admins.length === 0) {
+                const nextMember = members[0];
+                admins = [typeof nextMember === 'object' ? nextMember.uid : nextMember];
+            }
+
+            const nextCreator = roomData.createdBy === email && typeof members[0] === 'object'
+                ? members[0].email
+                : roomData.createdBy;
+
+            await updateDoc(roomDocument.ref, { members, memberIds, pendingMembers, admins, createdBy: nextCreator });
+        }
+
+        showToast("Akses pengguna dinonaktifkan dan keanggotaannya dibersihkan", "success");
         loadDevDashboard();
     } catch(e) { showToast(e.message, "error"); }
 };
@@ -1809,12 +2346,7 @@ window.forceDeleteUser = async (uid, email) => {
 window.forceDeleteGroup = async (gid, name) => {
     if(!confirm(`PERINGATAN: Hapus paksa grup "${name}" dan semua isinya?`)) return;
     try {
-        await deleteDoc(doc(db, "rooms", gid));
-        const chatQ = query(collection(db, "messages"), where("roomId", "==", gid));
-        const chatSnap = await getDocs(chatQ);
-        const batch = writeBatch(db);
-        chatSnap.forEach(d => batch.delete(d.ref));
-        await batch.commit();
+        await deleteRoomAndMessages(gid);
         showToast("Grup & isi obrolan dibongkar", "success");
         loadDevDashboard();
     } catch(e) { showToast(e.message, "error"); }
